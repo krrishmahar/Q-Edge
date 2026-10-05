@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,22 +12,16 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image, ImageOps
 
+from q_edge.backends import Backend, get_backend
 from q_edge.config import QEdgeConfig
-from q_edge.quantum.qhed_fast import qhed_edge_magnitude
-from q_edge.tiling.tiler import TileGrid, split, stitch
+from q_edge.scheduler.executor import ProgressCallback, execute
+from q_edge.scheduler.resources import auto_settings
+from q_edge.tiling.tiler import split, stitch
 
 FloatArray = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 
-#: Maps a ``(B, T, T)`` batch of tiles to ``(B, T-1, T-1)`` edge magnitudes.
-TileFunction = Callable[[FloatArray], FloatArray]
-
-#: Receives ``(tiles_done, tiles_total)`` after every processed batch.
-ProgressCallback = Callable[[int, int], None]
-
 ImageSource = str | Path | bytes | Image.Image | NDArray[np.generic]
-
-_DEFAULT_BATCH_SIZE = 16_384
 
 
 @dataclass(frozen=True)
@@ -41,6 +34,8 @@ class PipelineResult:
         edges: Edge map normalised to ``[0, 1]``.
         binary: ``edges >= threshold``.
         num_tiles: Number of tiles processed.
+        workers: Workers actually used.
+        batch_size: Tiles per batch actually used.
         timings: Wall time in seconds per stage.
         config: The configuration used.
     """
@@ -50,6 +45,8 @@ class PipelineResult:
     edges: FloatArray
     binary: BoolArray
     num_tiles: int
+    workers: int = 1
+    batch_size: int = 0
     timings: dict[str, float] = field(default_factory=dict)
     config: QEdgeConfig = field(default_factory=QEdgeConfig)
 
@@ -110,22 +107,6 @@ def preprocess(image: FloatArray, max_side: int) -> FloatArray:
     return np.clip(resized.astype(np.float64), 0.0, 1.0)
 
 
-def process_grid(
-    grid: TileGrid,
-    tile_fn: TileFunction,
-    batch_size: int = _DEFAULT_BATCH_SIZE,
-    progress: ProgressCallback | None = None,
-) -> FloatArray:
-    """Run ``tile_fn`` over all tiles of ``grid`` in batches and return stacked cores."""
-    c = grid.core_size
-    cores = np.empty((grid.num_tiles, c, c), dtype=np.float64)
-    for start, stop in grid.iter_batches(batch_size):
-        cores[start:stop] = tile_fn(grid.batch(start, stop))
-        if progress is not None:
-            progress(stop, grid.num_tiles)
-    return cores
-
-
 def normalise(magnitude: FloatArray) -> FloatArray:
     """Scale an edge magnitude map to ``[0, 1]`` by its maximum (all-zero maps stay zero)."""
     peak = float(np.max(magnitude)) if magnitude.size else 0.0
@@ -135,7 +116,7 @@ def normalise(magnitude: FloatArray) -> FloatArray:
 def run_pipeline(
     source: ImageSource,
     config: QEdgeConfig | None = None,
-    tile_fn: TileFunction = qhed_edge_magnitude,
+    backend: Backend | None = None,
     progress: ProgressCallback | None = None,
 ) -> PipelineResult:
     """Run QHED edge detection on an image through the tiled pipeline.
@@ -143,13 +124,15 @@ def run_pipeline(
     Args:
         source: Image to process (see :func:`load_image`).
         config: Pipeline settings; defaults to :class:`QEdgeConfig`.
-        tile_fn: Function computing per-tile edge magnitudes.
+        backend: Backend instance; defaults to the registered backend named by
+            ``config.backend``.
         progress: Optional callback invoked with ``(done, total)`` tiles.
 
     Returns:
         A :class:`PipelineResult` with the edge map, binary mask and stage timings.
     """
     cfg = config or QEdgeConfig()
+    engine = backend or get_backend(cfg.backend, cfg)
     timings: dict[str, float] = {}
 
     t0 = time.perf_counter()
@@ -165,7 +148,17 @@ def run_pipeline(
     timings["tile"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    cores = process_grid(grid, tile_fn, cfg.batch_size or _DEFAULT_BATCH_SIZE, progress)
+    auto = auto_settings(image.shape, engine.name)
+    workers = cfg.workers or auto.workers
+    batch_size = cfg.batch_size or auto.batch_size
+    cores = execute(
+        grid,
+        engine,
+        workers=workers,
+        batch_size=batch_size,
+        kind=cfg.executor,
+        progress=progress,
+    )
     timings["compute"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
@@ -183,6 +176,8 @@ def run_pipeline(
         edges=edges,
         binary=binary,
         num_tiles=grid.num_tiles,
+        workers=workers,
+        batch_size=batch_size,
         timings=timings,
         config=cfg,
     )

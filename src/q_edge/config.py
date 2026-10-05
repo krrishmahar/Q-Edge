@@ -21,6 +21,14 @@ class Preset(StrEnum):
         return _PRESET_MAX_SIDE[self]
 
 
+class ExecutorKind(StrEnum):
+    """How the scheduler parallelises tile batches."""
+
+    THREAD = "thread"
+    PROCESS = "process"
+    SERIAL = "serial"
+
+
 _PRESET_MAX_SIDE: dict[Preset, int] = {
     Preset.FAST: 512,
     Preset.BALANCED: 1280,
@@ -43,6 +51,7 @@ class QEdgeConfig:
         threshold: Binarisation threshold in ``[0, 1]`` applied to the normalised edge map.
         preset: Resolution preset bounding the processed image size.
         seed: Optional random seed for shot-based simulation.
+        executor: Parallelisation strategy for tile batches.
     """
 
     tile_size: int = 8
@@ -53,6 +62,7 @@ class QEdgeConfig:
     threshold: float = 0.2
     preset: Preset = Preset.BALANCED
     seed: int | None = None
+    executor: ExecutorKind = ExecutorKind.THREAD
 
     def __post_init__(self) -> None:
         if self.tile_size not in SUPPORTED_TILE_SIZES:
@@ -68,6 +78,7 @@ class QEdgeConfig:
         if not 0.0 <= self.threshold <= 1.0:
             raise ValueError(f"threshold must be within [0, 1], got {self.threshold}")
         object.__setattr__(self, "preset", Preset(self.preset))
+        object.__setattr__(self, "executor", ExecutorKind(self.executor))
 
     def with_updates(self, **changes: object) -> QEdgeConfig:
         """Return a validated copy with the given fields replaced."""
