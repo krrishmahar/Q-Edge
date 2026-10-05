@@ -1,0 +1,65 @@
+[project]
+name = "q-edge"
+version = "0.1.0"
+description = "Hybrid quantum-classical edge detection prototype (QHED) with a Streamlit UI"
+readme = "README.md"
+authors = [
+    { name = "Grubgain", email = "grubgainai@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.4.6",
+    "opencv-python-headless>=5.0.0.93",
+    "pandas>=3.0.6",
+    "pillow>=12.3.0",
+    "plotly>=7.1.0",
+    "qiskit>=2.5.2",
+    "qiskit-aer>=0.17.2",
+    "scikit-image>=0.26.0",
+    "scipy>=1.17.1",
+    "streamlit>=1.65.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pandas-stubs>=3.0.5.260914",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "skimage.*", "qiskit_aer.*", "plotly.*", "cupy.*", "scipy.*", "streamlit.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["slow: long-running end-to-end tests (deselect with -m 'not slow')"]
+filterwarnings = ["ignore::DeprecationWarning:qiskit.*"]
+
+[tool.coverage.run]
+source = ["q_edge"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
