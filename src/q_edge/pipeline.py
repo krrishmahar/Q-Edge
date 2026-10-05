@@ -81,6 +81,10 @@ def load_image(source: ImageSource) -> FloatArray:
     if img.mode in ("I;16", "I;16B", "I;16L", "I"):
         arr = np.asarray(img, dtype=np.float64)
         return np.clip(arr / 65535.0, 0.0, 1.0)
+    if img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info:
+        # Flatten transparency onto white so transparent regions do not read as black edges.
+        rgba = img.convert("RGBA")
+        img = Image.alpha_composite(Image.new("RGBA", rgba.size, "white"), rgba)
     return np.asarray(img.convert("L"), dtype=np.float64) / 255.0
 
 

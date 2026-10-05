@@ -192,3 +192,34 @@ def test_auto_settings_for_small_and_circuit_backends() -> None:
     assert small.tile_size == 8 and small.workers == 1
     circuit = auto_settings((256, 256), "aer", _RES)
     assert circuit.tile_size == 4 and circuit.batch_size == 32 and circuit.workers <= 4
+
+
+# --- fallbacks ----------------------------------------------------------------------------
+
+
+def test_memory_detection_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    from q_edge.scheduler import resources
+
+    def broken() -> tuple[int, int]:
+        raise OSError("unavailable")
+
+    monkeypatch.setattr(resources, "_memory_windows", broken)
+    monkeypatch.setattr(resources, "_memory_posix", broken)
+    total, available = resources.detect_memory()
+    assert total == 4 * 1024**3 and available == total // 2
+
+
+def test_load_cupy_without_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    from q_edge.backends import gpu_backend
+
+    fake = types.ModuleType("cupy")
+    fake.cuda = types.SimpleNamespace(  # type: ignore[attr-defined]
+        runtime=types.SimpleNamespace(getDeviceCount=lambda: 0)
+    )
+    monkeypatch.setitem(sys.modules, "cupy", fake)
+    assert gpu_backend.load_cupy() is None
+    fake.cuda.runtime.getDeviceCount = lambda: 1  # type: ignore[attr-defined]
+    assert gpu_backend.load_cupy() is fake

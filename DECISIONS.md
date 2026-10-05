@@ -64,3 +64,19 @@ Defaults chosen where the brief was ambiguous. Each entry: decision, then ration
   on flat images is not stretched into false full-scale edges (found by the classical tests).
 - **Peak memory** comes from `tracemalloc`. It sees NumPy allocations but not native OpenCV or
   Aer buffers, so it is a lower bound.
+
+## App and hardening
+- **Uploads** are limited to PNG/JPEG, 50 MB and 3840x2160 (either orientation). Empty,
+  corrupt, truncated, oversized and decompression-bomb files raise `UploadError` with a
+  user-facing message.
+- **Transparency** is flattened onto white before the grayscale conversion, so transparent
+  regions do not show up as black shapes with false edges. CMYK and 16-bit PNGs are supported.
+- **Circuit backends in the UI** are capped at 64 px (longest side) with 4x4 tiles. A 64x64
+  crop takes about 13 s on Aer (two circuits per tile).
+- **Caching.** `st.cache_data` keys on the image bytes and the settings. The progress bar is
+  created inside the cached function, because Streamlit cannot replay elements that belong to
+  outside containers.
+- **No runtime network calls.** `.streamlit/config.toml` binds the server to `localhost`,
+  which skips Streamlit's external-IP lookup, and disables usage statistics.
+- **Light theme is fixed** so the categorical chart palette (validated for light surfaces)
+  stays legible.

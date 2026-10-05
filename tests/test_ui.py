@@ -162,3 +162,35 @@ def test_app_reports_unconfigured_hardware() -> None:
     at.run()
     assert not at.exception, at.exception
     assert any("not configured" in e.value for e in at.error)
+
+
+# --- hardening: unusual but valid uploads -------------------------------------------------
+
+
+def test_decode_cmyk_jpeg() -> None:
+    cmyk = Image.new("CMYK", (16, 12), (0, 0, 0, 0))
+    buf = io.BytesIO()
+    cmyk.save(buf, format="JPEG")
+    decoded = decode_upload(buf.getvalue())
+    assert decoded.image.shape == (12, 16)
+    assert decoded.image.mean() > 0.9  # no ink = white
+
+
+def test_decode_transparent_png_flattens_on_white() -> None:
+    rgba = np.zeros((10, 10, 4), dtype=np.uint8)  # fully transparent black
+    rgba[:5, :, 3] = 255  # top half opaque black
+    image = decode_upload(_encode(rgba)).image
+    np.testing.assert_allclose(image[:5], 0.0)
+    np.testing.assert_allclose(image[5:], 1.0)
+
+
+def test_decode_16bit_png() -> None:
+    arr = np.full((6, 6), 32768, dtype=np.uint16)
+    image = decode_upload(_encode(arr)).image
+    np.testing.assert_allclose(image, 32768 / 65535)
+
+
+def test_decode_rejects_decompression_bomb(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    with pytest.raises(UploadError, match="too large"):
+        decode_upload(_encode(np.zeros((20, 20), dtype=np.uint8)))

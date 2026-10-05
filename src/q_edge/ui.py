@@ -27,7 +27,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 ALLOWED_FORMATS: frozenset[str] = frozenset({"PNG", "JPEG"})
 
 #: Longest side processed by circuit backends, which simulate one circuit per tile.
-CIRCUIT_MAX_SIDE = 96
+CIRCUIT_MAX_SIDE = 64
 
 #: Circuit-level backends that need the small-image cap.
 CIRCUIT_BACKENDS: frozenset[str] = frozenset({"aer", "ibm-hardware"})
