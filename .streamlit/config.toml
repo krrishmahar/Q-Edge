@@ -1,0 +1,12 @@
+# Q-Edge Streamlit configuration. The app makes no network calls at runtime:
+# binding to localhost skips Streamlit's external-IP lookup, and usage stats are off.
+
+[server]
+address = "localhost"
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
