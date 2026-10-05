@@ -165,7 +165,9 @@ the NumPy path and real Aer circuits is about 6e-12.
 3. **Real-time video:** per-frame tiling that recomputes only changed tiles, on the GPU backend.
 4. **Distributed:** tile batches sent to a Ray/Dask cluster or to several QPUs.
 
-See [DECISIONS.md](DECISIONS.md) for the design choices and defaults.
+See [DECISIONS.md](DECISIONS.md) for the design choices and defaults, and [docs/](docs/README.md) for
+the full documentation set (usage walkthrough with screenshots, features, architecture, API,
+roadmap and optimisations).
 
 ## Reference
 

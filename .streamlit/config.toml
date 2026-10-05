@@ -5,6 +5,9 @@
 address = "localhost"
 maxUploadSize = 50
 
+[client]
+toolbarMode = "minimal"
+
 [browser]
 gatherUsageStats = false
 
