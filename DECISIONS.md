@@ -46,3 +46,21 @@ Defaults chosen where the brief was ambiguous. Each entry: decision, then ration
 - **GPU backend** uses CuPy only if it is installed and sees a CUDA device. Otherwise it logs a
   warning and runs the same math with NumPy. CuPy is deliberately not a dependency.
 - **Hardware stub** raises `NotConfiguredError`; the prototype makes no network calls.
+
+## Benchmarks and metrics
+- **Reference edge map.** Synthetic scenes use their exact region boundaries as ground truth.
+  For uploaded photos there is no ground truth, so Canny's output is the reference and Canny
+  scores F1 = 1 by construction. The UI and README state this.
+- **Ground-truth convention favours QHED.** The synthetic ground truth marks the pixel to the
+  left of / above each boundary, which is exactly where a forward difference fires, so QHED
+  reaches F1 = 1.0 there. Classical 3x3 operators produce 2-pixel-wide responses, which the
+  1-pixel tolerance only partly forgives. Read the F1 numbers as "correct", not "better".
+- **No quantum speedup.** Measured on the development machine (8 cores, NumPy fast path,
+  thread pool): QHED simulation runs at about 4-7 MP/s, while OpenCV Sobel, Prewitt, Canny
+  and Laplacian run at about 40-100 MP/s. At 4K that is 1.1 s for QHED versus 0.1-0.2 s
+  classically. Both scale linearly with pixel count; the tiled design keeps the circuit
+  size constant (9 qubits for 16x16 tiles) at any resolution.
+- **Numerical noise floor.** `normalise` treats peaks below 1e-9 as zero, so rounding residue
+  on flat images is not stretched into false full-scale edges (found by the classical tests).
+- **Peak memory** comes from `tracemalloc`. It sees NumPy allocations but not native OpenCV or
+  Aer buffers, so it is a lower bound.

@@ -10,7 +10,8 @@ from PIL import Image
 
 from q_edge.config import Preset, QEdgeConfig
 from q_edge.data.synthetic import synthetic_shapes
-from q_edge.pipeline import load_image, normalise, preprocess, run_pipeline
+from q_edge.imaging import normalise
+from q_edge.pipeline import load_image, preprocess, run_pipeline
 
 
 def _png_bytes(array: np.ndarray, mode: str | None = None) -> bytes:
@@ -87,8 +88,9 @@ def test_preprocess_downscales_longest_side() -> None:
     assert preprocess(image, 1000) is image
 
 
-def test_normalise_handles_zero_map() -> None:
+def test_normalise_handles_zero_and_noise_maps() -> None:
     np.testing.assert_array_equal(normalise(np.zeros((3, 3))), 0.0)
+    np.testing.assert_array_equal(normalise(np.full((3, 3), 1e-15)), 0.0)
     np.testing.assert_allclose(normalise(np.array([[0.0, 2.0]])), [[0.0, 1.0]])
 
 

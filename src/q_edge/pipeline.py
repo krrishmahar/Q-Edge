@@ -14,6 +14,7 @@ from PIL import Image, ImageOps
 
 from q_edge.backends import Backend, get_backend
 from q_edge.config import QEdgeConfig
+from q_edge.imaging import normalise
 from q_edge.scheduler.executor import ProgressCallback, execute
 from q_edge.scheduler.resources import auto_settings
 from q_edge.tiling.tiler import split, stitch
@@ -105,12 +106,6 @@ def preprocess(image: FloatArray, max_side: int) -> FloatArray:
     size = (max(1, round(w * scale)), max(1, round(h * scale)))
     resized = cv2.resize(image.astype(np.float32), size, interpolation=cv2.INTER_AREA)
     return np.clip(resized.astype(np.float64), 0.0, 1.0)
-
-
-def normalise(magnitude: FloatArray) -> FloatArray:
-    """Scale an edge magnitude map to ``[0, 1]`` by its maximum (all-zero maps stay zero)."""
-    peak = float(np.max(magnitude)) if magnitude.size else 0.0
-    return magnitude / peak if peak > 0 else np.zeros_like(magnitude)
 
 
 def run_pipeline(
