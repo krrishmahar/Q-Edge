@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from typing import Any
 
 import cv2
 import numpy as np
@@ -140,3 +141,109 @@ def signed_difference(quantum: FloatArray, classical: FloatArray) -> FloatArray:
         raise ValueError(f"shape mismatch: {quantum.shape} vs {classical.shape}")
     result: FloatArray = np.asarray(quantum, dtype=np.float64) - classical
     return result
+
+
+def to_png_data_url(image: NDArray[np.generic]) -> str:
+    """Encode an image or edge map as a base64 data:image/png URL."""
+    import base64
+
+    b64 = base64.b64encode(to_png_bytes(image)).decode("utf-8")
+    return f"data:image/png;base64,{b64}"
+
+
+def process_pipeline_request(payload: dict[str, Any]) -> dict[str, Any]:
+    """Process an image through the real Q-Edge quantum pipeline and return JSON response.
+
+    Includes real QHED edge map, Sobel, Canny, timings, metadata, and 9-stage tile breakdown.
+    """
+    import base64
+
+    from q_edge.classical.canny import canny
+    from q_edge.classical.sobel import sobel
+    from q_edge.config import Preset, QEdgeConfig
+    from q_edge.pipeline import load_image, run_pipeline
+    from q_edge.quantum.encoding import normalize_tiles
+    from q_edge.quantum.qhed_circuit import build_qhed_circuit, circuit_metrics
+    from q_edge.quantum.qhed_fast import combine, qhed_responses
+
+    image_b64 = str(payload.get("image_b64", ""))
+    if image_b64.startswith("data:image"):
+        image_b64 = image_b64.split(",", 1)[1]
+    image_bytes = base64.b64decode(image_b64)
+    image = load_image(image_bytes)
+
+    tile_size = int(payload.get("tile_size", 8))
+    sim_tile_size = tile_size if tile_size in (4, 8, 16) else 8
+    backend = str(payload.get("backend", "numpy"))
+    threshold = float(payload.get("threshold", 0.2))
+    raw_shots = payload.get("shots")
+    shots = int(raw_shots) if raw_shots is not None and str(raw_shots).isdigit() else None
+
+    config = QEdgeConfig(
+        tile_size=sim_tile_size,
+        backend=backend,
+        threshold=threshold,
+        shots=shots,
+        preset=Preset.FULL_4K,
+    )
+
+    result = run_pipeline(image, config)
+    sobel_map = sobel(result.image)
+    canny_map = canny(result.image)
+
+    # Compute a real tile through the 9 stages
+    h, w = result.image.shape
+    th = min(8, h, w)
+    tile_crop = result.image[:th, :th]
+    if tile_crop.shape != (8, 8):
+        tile_crop = np.pad(
+            tile_crop,
+            ((0, 8 - tile_crop.shape[0]), (0, 8 - tile_crop.shape[1])),
+            mode="edge",
+        )
+
+    norm_tile = tile_crop / (np.max(tile_crop) or 1.0)
+    amps, _ = normalize_tiles(norm_tile[None, ...])
+    gx_resp, gy_resp = qhed_responses(norm_tile[None, ...])
+    mag_tile = combine(gx_resp, gy_resp)[0]
+    edge_tile = mag_tile >= threshold
+
+    # Build real circuit for this tile to get exact depth & gate count
+    qc = build_qhed_circuit(amps[0])
+    c_metrics = circuit_metrics(qc)
+
+    tile_stages = {
+        "original": to_png_data_url(tile_crop),
+        "gray": to_png_data_url(tile_crop),
+        "normalized": to_png_data_url(norm_tile),
+        "qpie": to_png_data_url(amps.reshape(8, 8)),
+        "gx": to_png_data_url(np.abs(gx_resp[0])),
+        "gy": to_png_data_url(np.abs(gy_resp[0])),
+        "magnitude": to_png_data_url(mag_tile),
+        "edges": to_png_data_url(edge_tile),
+        "circuit": c_metrics,
+    }
+
+    return {
+        "status": "success",
+        "qhed_b64": to_png_data_url(result.edges),
+        "sobel_b64": to_png_data_url(sobel_map),
+        "canny_b64": to_png_data_url(canny_map),
+        "original_b64": to_png_data_url(result.image),
+        "timings": {
+            "execution": result.timings.get("compute", 0.0),
+            "preprocess": result.timings.get("preprocess", 0.0) + result.timings.get("load", 0.0),
+            "stitch": result.timings.get("stitch", 0.0) + result.timings.get("postprocess", 0.0),
+            "total": result.total_time,
+        },
+        "metadata": {
+            "qubits": result.qubits_per_tile or c_metrics["num_qubits"],
+            "depth": c_metrics["depth"],
+            "gates": c_metrics["gate_count"],
+            "tiles": result.num_tiles,
+            "width": w,
+            "height": h,
+            "backend": backend,
+        },
+        "tile_stages": tile_stages,
+    }

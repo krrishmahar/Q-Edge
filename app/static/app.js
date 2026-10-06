@@ -374,30 +374,90 @@ async function runPipeline() {
     }, 60);
   });
 
-  // Generate edge maps
-  const t0 = performance.now();
-  const [qhedURL, sobelURL, cannyURL] = await Promise.all([
-    src ? simulateEdgeDetection(src, 'qhed')  : null,
-    src ? simulateEdgeDetection(src, 'sobel') : null,
-    src ? simulateEdgeDetection(src, 'canny') : null,
-  ]);
-  const elapsed = (performance.now() - t0) / 1000;
-
-  state.resultImages = {
-    original: src,
-    qhed:     qhedURL,
-    sobel:    sobelURL,
-    canny:    cannyURL,
+  // Connect with Python backend
+  const payload = {
+    image_b64: src,
+    tile_size: state.tileSize,
+    backend: state.backend,
+    threshold: state.threshold,
+    shots: state.shots,
   };
-  state.hasResults = true;
 
-  // Show image
-  hide($('stage-progress'));
-  showTab(state.activeTab);
+  let backendData = null;
+  try {
+    const apiEndpoint = window.__BACKEND_API__ || 'http://127.0.0.1:8585/api/process';
+    const resp = await fetch(apiEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) {
+      backendData = await resp.json();
+    }
+  } catch (err) {
+    console.warn('Backend API connection failed, using fallback:', err);
+  }
 
-  // Results band
-  updateResults(elapsed, total, ts);
-  showResultsBand();
+  if (backendData && backendData.status === 'success') {
+    state.resultImages = {
+      original: backendData.original_b64 || src,
+      qhed:     backendData.qhed_b64,
+      sobel:    backendData.sobel_b64,
+      canny:    backendData.canny_b64,
+    };
+    state.tileStages = backendData.tile_stages;
+    state.timings = backendData.timings;
+    state.metadata = backendData.metadata;
+    state.hasResults = true;
+
+    hide($('stage-progress'));
+    showTab(state.activeTab);
+
+    // Results band with real data from Python backend
+    $('m-execution').textContent  = `${backendData.timings.execution.toFixed(2)} s`;
+    $('m-preprocess').textContent = `${backendData.timings.preprocess.toFixed(2)} s`;
+    $('m-stitch').textContent     = `${backendData.timings.stitch.toFixed(2)} s`;
+    $('m-qubits').textContent     = backendData.metadata.qubits;
+    $('m-depth').textContent      = backendData.metadata.depth;
+    $('m-tiles').textContent      = backendData.metadata.tiles.toLocaleString();
+
+    if ($('hero-qubits')) $('hero-qubits').textContent = backendData.metadata.qubits;
+    if ($('hero-depth'))  $('hero-depth').textContent  = backendData.metadata.depth;
+    if ($('hero-gates'))  $('hero-gates').textContent  = backendData.metadata.gates;
+
+    // Comparison grid with all 4 side-by-side (Original, QHED, Sobel, Canny)
+    $('comp-img-original').src = state.resultImages.original;
+    $('comp-img-qhed').src     = state.resultImages.qhed || '';
+    $('comp-img-sobel').src    = state.resultImages.sobel || '';
+    $('comp-img-canny').src    = state.resultImages.canny || '';
+    show($('comparison-grid'));
+
+    show($('download-btn'));
+    showResultsBand();
+  } else {
+    // Fallback if backend server is not available
+    const t0 = performance.now();
+    const [qhedURL, sobelURL, cannyURL] = await Promise.all([
+      src ? simulateEdgeDetection(src, 'qhed')  : null,
+      src ? simulateEdgeDetection(src, 'sobel') : null,
+      src ? simulateEdgeDetection(src, 'canny') : null,
+    ]);
+    const elapsed = (performance.now() - t0) / 1000;
+
+    state.resultImages = {
+      original: src,
+      qhed:     qhedURL,
+      sobel:    sobelURL,
+      canny:    cannyURL,
+    };
+    state.hasResults = true;
+
+    hide($('stage-progress'));
+    showTab(state.activeTab);
+
+    updateResults(elapsed, total, ts);
+    showResultsBand();
+  }
 
   // Reset run button
   state.running = false;
@@ -479,6 +539,17 @@ function renderInspectorStage(stage) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
+
+  // If real backend tile stage image is available, render it directly!
+  if (state.tileStages && state.tileStages[stage]) {
+    const img = new Image();
+    img.onload = () => {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, W, H);
+    };
+    img.src = state.tileStages[stage];
+    return;
+  }
 
   // If we have a real image, process a crop of it; otherwise draw synthetic
   if (state.imageURL && stage !== 'qpie') {

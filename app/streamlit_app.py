@@ -7,10 +7,15 @@ Run with: uv run streamlit run app/streamlit_app.py
 from __future__ import annotations
 
 import base64
+import http.server
+import json
+import threading
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+from q_edge.ui import process_pipeline_request
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -59,6 +64,65 @@ st.markdown(
 )
 
 
+API_PORT = 8585
+_SERVER_RUNNING = False
+_LOCK = threading.Lock()
+
+
+class APIHandler(http.server.BaseHTTPRequestHandler):
+    def do_OPTIONS(self) -> None:
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        if self.path == "/api/process":
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            try:
+                payload = json.loads(body.decode("utf-8"))
+                response_data = process_pipeline_request(payload)
+                resp_bytes = json.dumps(response_data).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(resp_bytes)))
+                self.end_headers()
+                self.wfile.write(resp_bytes)
+            except Exception as exc:
+                err_bytes = json.dumps({"status": "error", "message": str(exc)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def ensure_backend_server() -> int:
+    global _SERVER_RUNNING
+    with _LOCK:
+        if _SERVER_RUNNING:
+            return API_PORT
+        try:
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", API_PORT), APIHandler)
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+            _SERVER_RUNNING = True
+            return API_PORT
+        except OSError:
+            _SERVER_RUNNING = True
+            return API_PORT
+
+
 def get_html_content() -> str:
     """Bundle the new web frontend (HTML, CSS, JS) into a self-contained page."""
     html = INDEX_PATH.read_text(encoding="utf-8")
@@ -71,6 +135,9 @@ def get_html_content() -> str:
         f"<style>\n{css}\n</style>",
     )
 
+    port = ensure_backend_server()
+    backend_setup = f"window.__BACKEND_API__ = 'http://127.0.0.1:{port}/api/process';\n"
+
     # Prepare bundled sample image if available
     sample_setup = ""
     if SAMPLE_PATH.exists():
@@ -81,7 +148,7 @@ def get_html_content() -> str:
     # Inline script
     html = html.replace(
         '<script src="app.js"></script>',
-        f"<script>\n{sample_setup}{js}\n</script>",
+        f"<script>\n{backend_setup}{sample_setup}{js}\n</script>",
     )
 
     return html
