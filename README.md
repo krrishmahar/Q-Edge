@@ -1,9 +1,9 @@
-# Q-Edge
+# Quantum Bits
 
 **Hybrid quantum-classical edge detection with Quantum Hadamard Edge Detection (QHED), scaled
 to 4K images by tiling.**
 
-Q-Edge splits an image into small tiles and amplitude-encodes each tile into a few qubits. It
+Quantum Bits splits an image into small tiles and amplitude-encodes each tile into a few qubits. It
 then runs the QHED circuit (Yao et al., 2017) on every tile and stitches the responses into a
 full-resolution edge map. Circuit size depends only on the tile, never on the image: a 4K frame
 needs more circuits, not bigger ones. A Streamlit app shows the quantum result beside Sobel,
