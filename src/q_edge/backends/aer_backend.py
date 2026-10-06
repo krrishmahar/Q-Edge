@@ -16,21 +16,30 @@ class AerBackend:
     Attributes:
         shots: ``None`` for exact statevector simulation, otherwise shots per circuit.
         seed: Seed for shot sampling.
-
-    This backend builds and simulates ``2 * B`` circuits per batch. It is orders of
-    magnitude slower than :class:`~q_edge.backends.numpy_backend.NumpyBackend` and is
-    intended for small images and validation.
+        noisy: Whether to enable a depolarizing + readout noise model.
     """
 
     shots: int | None = None
     seed: int | None = None
+    noisy: bool = False
     name: str = "aer"
 
     def run_tiles(self, batch: FloatArray) -> FloatArray:
         """Return QHED edge magnitudes computed from Aer circuit runs."""
-        return circuit_edge_magnitude(batch, shots=self.shots, seed=self.seed)
+        from q_edge.quantum.qhed_circuit import build_noise_model
+
+        noise_model = build_noise_model() if self.noisy else None
+        return circuit_edge_magnitude(
+            batch, shots=self.shots, seed=self.seed, noise_model=noise_model
+        )
 
     @classmethod
-    def from_config(cls, config: QEdgeConfig) -> AerBackend:
+    def from_config(cls, config: QEdgeConfig, noisy: bool = False) -> AerBackend:
         """Factory used by the backend registry."""
-        return cls(shots=config.shots, seed=config.seed)
+        is_noisy = noisy or ("noisy" in config.backend.lower())
+        return cls(
+            shots=config.shots,
+            seed=config.seed,
+            noisy=is_noisy,
+            name="aer-noisy" if is_noisy else "aer",
+        )

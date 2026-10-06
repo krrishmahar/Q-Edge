@@ -13,6 +13,7 @@ from q_edge.backends.numpy_backend import NumpyBackend
 
 register_backend("numpy", NumpyBackend.from_config)
 register_backend("aer", AerBackend.from_config)
+register_backend("aer-noisy", lambda cfg: AerBackend.from_config(cfg, noisy=True))
 register_backend("gpu", GpuBackend.from_config)
 register_backend("ibm-hardware", IBMHardwareBackend.from_config)
 

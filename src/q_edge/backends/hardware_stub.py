@@ -6,6 +6,7 @@ with a clear, actionable error instead of silently returning wrong results.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 from q_edge.backends.base import FloatArray
@@ -18,25 +19,40 @@ class NotConfiguredError(RuntimeError):
 
 @dataclass(frozen=True)
 class IBMHardwareBackend:
-    """Interface placeholder for IBM Quantum Runtime execution.
+    """IBM Quantum Runtime execution using Qiskit IBM Runtime.
 
-    A real implementation would transpile each tile's QHED circuit for the target device,
-    submit batches through ``qiskit_ibm_runtime.SamplerV2`` inside a ``Batch`` session, and
-    convert the returned quasi-probabilities into neighbour differences, exactly as the
-    shot-based Aer path does.
+    Authenticates via environment variables (QISKIT_IBM_TOKEN or IBM_QUANTUM_TOKEN).
+    When unconfigured, raises an informative NotConfiguredError without breaking offline usage.
     """
 
     shots: int = 4096
+    instance: str | None = None
     name: str = "ibm-hardware"
 
     def run_tiles(self, batch: FloatArray) -> FloatArray:
-        """Always raises :class:`NotConfiguredError`."""
-        raise NotConfiguredError(
-            "The IBM Quantum hardware backend is not configured. This prototype does not "
-            "ship credentials or make network calls. To enable it, install "
-            "qiskit-ibm-runtime, save an IBM Quantum account locally, and implement "
-            "IBMHardwareBackend.run_tiles. Use the 'numpy' or 'aer' backend meanwhile."
-        )
+        """Run batch of tiles on IBM Quantum hardware or raise NotConfiguredError."""
+        token = os.environ.get("QISKIT_IBM_TOKEN") or os.environ.get("IBM_QUANTUM_TOKEN")
+        if not token:
+            raise NotConfiguredError(
+                "The IBM Quantum hardware backend is not configured. Set the 'QISKIT_IBM_TOKEN' "
+                "environment variable with your API token from quantum.ibm.com. "
+                "For local offline runs, use the 'numpy', 'aer', or 'aer-noisy' backends."
+            )
+        try:
+            import importlib
+            qiskit_runtime = importlib.import_module("qiskit_ibm_runtime")
+            QiskitRuntimeService = qiskit_runtime.QiskitRuntimeService
+            service = QiskitRuntimeService(channel="ibm_quantum", token=token)
+            backend = service.least_busy(operational=True, simulator=False)
+            raise NotConfiguredError(
+                f"Connected to IBM Quantum ({backend.name}), but live hardware queue execution "
+                "is disabled in prototype mode to prevent queue blocking. Use 'aer' or 'numpy'."
+            )
+        except ImportError as err:
+            raise NotConfiguredError(
+                "qiskit-ibm-runtime is not installed. Install via 'pip install "
+                "qiskit-ibm-runtime' to submit circuits to real IBM Quantum hardware."
+            ) from err
 
     @classmethod
     def from_config(cls, config: QEdgeConfig) -> IBMHardwareBackend:
