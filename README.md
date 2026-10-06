@@ -110,19 +110,18 @@ scripts/demo.py                 end-to-end demo
 
 ## Benchmark results
 
-Development machine: 8 CPU cores, about 11.5 GB RAM, no GPU, Windows, NumPy backend with
-thread pool. Run `uv run python scripts/demo.py --scaling` to reproduce.
+Development machine: Windows, NumPy backend with thread pool. Run `uv run python scripts/demo.py --scaling` to reproduce.
 
 **Runtime vs resolution** (synthetic scenes, seconds):
 
 | Resolution | Megapixels | QHED (simulated) | Sobel | Canny |
 |---|---|---|---|---|
-| 480x270 | 0.13 | 0.028 | 0.002 | 0.002 |
-| 960x540 | 0.52 | 0.071 | 0.010 | 0.009 |
-| 1920x1080 | 2.07 | 0.301 | 0.031 | 0.032 |
-| 3840x2160 | 8.29 | 0.876 | 0.219 | 0.208 |
+| 480x270 | 0.13 | 0.032 | 0.004 | 0.002 |
+| 960x540 | 0.52 | 0.080 | 0.011 | 0.011 |
+| 1920x1080 | 2.07 | 0.277 | 0.059 | 0.028 |
+| 3840x2160 | 8.29 | 1.626 | 0.152 | 0.176 |
 
-A full 4K frame processes in about 0.9-1.1 s: 169,641 tiles of 8x8, or 36,864 tiles of 16x16.
+A full 4K frame processes in about 1.2-1.6 s: 169,641 tiles of 8x8, or 36,864 tiles of 16x16.
 All methods scale roughly linearly with pixel count.
 
 **Quality on synthetic 1080p with ground-truth edges:**
@@ -136,7 +135,7 @@ All methods scale roughly linearly with pixel count.
 | Laplacian | 0.974 | 0.981 | 26.6 |
 
 **Fast vs circuit:** on a 64x64 crop with 4x4 tiles, the maximum absolute difference between
-the NumPy path and real Aer circuits is about 6e-12.
+the NumPy path and real Aer circuits is 5.76e-12 (Aer took ~12.0 s).
 
 ## Limitations
 

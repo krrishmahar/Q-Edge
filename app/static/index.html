@@ -23,6 +23,7 @@
         <a href="#controls" class="nav-link">Configure</a>
         <a href="#visualization" class="nav-link">Visualize</a>
         <a href="#results" class="nav-link">Results</a>
+        <a href="#benchmarks" class="nav-link">Benchmarks</a>
         <a href="#architecture" class="nav-link">Architecture</a>
       </div>
       <div class="nav-right">
@@ -394,6 +395,173 @@
     </div>
   </section>
 
+  <!-- ───────────────────── BENCHMARKS BAND ───────────────────── -->
+  <section class="benchmarks-band" id="benchmarks">
+    <div class="benchmarks-inner">
+      <div class="benchmarks-header">
+        <div class="bm-header-left">
+          <span class="badge-pill badge-quantum">Empirical Benchmarks · Measured Data</span>
+          <h2 class="display-sm">Performance & Quality Benchmarks</h2>
+          <p class="bm-sub">
+            Side-by-side empirical evaluation of tiled Quantum Hadamard Edge Detection (QHED) versus standard classical operators (Sobel, Prewitt, Canny, Laplacian).
+            Classical CPU simulation verifies exact edge mathematics, O(N) resolution scaling, and numerical fidelity against real Qiskit Aer circuits.
+          </p>
+        </div>
+        <div class="bm-header-right">
+          <div class="bm-status-pill">
+            <span class="status-dot"></span>
+            <span id="bm-status-text">Baseline Verified · Local Machine</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="bm-kpi-grid">
+        <div class="bm-kpi-card">
+          <div class="bm-kpi-val" id="bm-kpi-scaling">O(N) Linear</div>
+          <div class="bm-kpi-label">Resolution Scaling</div>
+          <div class="bm-kpi-desc">Tiling scales linearly from 480p to 4K UHD. Memory usage remains bounded and flat.</div>
+        </div>
+        <div class="bm-kpi-card">
+          <div class="bm-kpi-val" id="bm-kpi-qubits">7 – 9 Qubits</div>
+          <div class="bm-kpi-label">Compact Circuits</div>
+          <div class="bm-kpi-desc">Fixed circuit depth per tile: 7 qubits for 8×8 tiles, 9 qubits for 16×16 tiles regardless of image size.</div>
+        </div>
+        <div class="bm-kpi-card">
+          <div class="bm-kpi-val" id="bm-kpi-f1">1.000 F1</div>
+          <div class="bm-kpi-label">Ground Truth Accuracy</div>
+          <div class="bm-kpi-desc">Exact single-pixel forward difference detection on synthetic ground-truth test scenes.</div>
+        </div>
+        <div class="bm-kpi-card">
+          <div class="bm-kpi-val" id="bm-kpi-aer">&lt; 6e-12</div>
+          <div class="bm-kpi-label">Qiskit Aer Fidelity</div>
+          <div class="bm-kpi-desc">Fast vectorized simulation matches full Qiskit Aer state-vector simulation down to machine epsilon.</div>
+        </div>
+      </div>
+
+      <!-- Controls & View Mode Toggle -->
+      <div class="bm-controls-bar">
+        <div class="segmented" id="bm-view-tabs" role="group" aria-label="Benchmark views">
+          <button class="seg-btn seg-active" data-view="image" id="bm-tab-image">Active Image / Sample</button>
+          <button class="seg-btn" data-view="synthetic" id="bm-tab-synthetic">Synthetic 1080p (Ground Truth)</button>
+          <button class="seg-btn" data-view="scaling" id="bm-tab-scaling">Resolution Sweep (480p → 4K)</button>
+        </div>
+
+        <div class="bm-actions">
+          <button class="btn-primary btn-sm" id="btn-run-benchmark">
+            <span class="bm-spinner" id="bm-spinner" hidden></span>
+            <span id="bm-run-label">Run Live Benchmark</span>
+          </button>
+          <button class="btn-secondary btn-sm" id="btn-run-scaling">Run 480p–4K Sweep</button>
+          <button class="btn-secondary btn-sm" id="btn-export-benchmarks" title="Export as CSV or JSON">Export Data ⤓</button>
+        </div>
+      </div>
+
+      <!-- Live Benchmark Table -->
+      <div class="bm-table-card">
+        <div class="bm-table-header">
+          <span class="bm-table-title" id="bm-table-title">Single Image Side-by-Side Comparison (Sample 1280×720)</span>
+          <span class="bm-table-subtitle" id="bm-table-subtitle">Reference: Canny Edge Detector (Canny scores F1 = 1.000 by definition)</span>
+        </div>
+        <div class="bm-table-wrap">
+          <table class="bm-table" id="bm-data-table">
+            <thead id="bm-table-head">
+              <tr>
+                <th>Method</th>
+                <th>Type</th>
+                <th>Runtime</th>
+                <th>Throughput</th>
+                <th>F1 Score</th>
+                <th>SSIM</th>
+                <th>PSNR</th>
+                <th>IoU</th>
+                <th>Density</th>
+                <th>Peak RAM</th>
+              </tr>
+            </thead>
+            <tbody id="bm-table-body">
+              <!-- Populated dynamically by app.js -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Benchmark Charts Row -->
+      <div class="bm-charts-grid">
+        <div class="bm-chart-card">
+          <div class="bm-chart-header">
+            <div>
+              <h3 class="bm-chart-title">Runtime vs Resolution (Scaling Law)</h3>
+              <p class="bm-chart-sub">Wall-clock seconds from 480p (0.13 MP) to 4K UHD (8.29 MP)</p>
+            </div>
+            <div class="bm-chart-legend">
+              <span class="legend-item"><span class="legend-dot dot-qhed"></span>QHED (Simulated)</span>
+              <span class="legend-item"><span class="legend-dot dot-sobel"></span>Sobel</span>
+              <span class="legend-item"><span class="legend-dot dot-canny"></span>Canny</span>
+            </div>
+          </div>
+          <div class="bm-chart-canvas-wrap">
+            <canvas id="scaling-chart-canvas" width="600" height="260" aria-label="Runtime vs Resolution chart"></canvas>
+          </div>
+        </div>
+
+        <div class="bm-chart-card">
+          <div class="bm-chart-header">
+            <div>
+              <h3 class="bm-chart-title">Quality & Detection Fidelity</h3>
+              <p class="bm-chart-sub">F1 score and SSIM structural similarity index</p>
+            </div>
+            <div class="bm-chart-legend">
+              <span class="legend-item"><span class="legend-dot dot-f1"></span>F1 Score</span>
+              <span class="legend-item"><span class="legend-dot dot-ssim"></span>SSIM</span>
+            </div>
+          </div>
+          <div class="bm-chart-canvas-wrap">
+            <canvas id="quality-chart-canvas" width="600" height="260" aria-label="Quality comparison chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Throughput Visualizer -->
+      <div class="bm-chart-card bm-throughput-card">
+        <div class="bm-chart-header">
+          <div>
+            <h3 class="bm-chart-title">Throughput Comparison (Megapixels / Second)</h3>
+            <p class="bm-chart-sub">Normalized throughput across algorithms</p>
+          </div>
+        </div>
+        <div class="bm-throughput-bars" id="bm-throughput-bars">
+          <!-- Dynamically populated throughput bars -->
+        </div>
+      </div>
+
+      <!-- Research & Scaling Takeaways -->
+      <div class="bm-insights-grid">
+        <div class="bm-insight-card">
+          <div class="bm-insight-icon">◈</div>
+          <h4 class="bm-insight-title">Resolution Independence</h4>
+          <p class="bm-insight-body">
+            Because Q-Edge uses localized spatial tiling, circuit width is invariant to image dimensions. A 4K frame uses the exact same 7-qubit circuit as a 64×64 thumbnail — only tile iteration count increases.
+          </p>
+        </div>
+        <div class="bm-insight-card">
+          <div class="bm-insight-icon">⊞</div>
+          <h4 class="bm-insight-title">Seam-Free Tiling Halo</h4>
+          <p class="bm-insight-body">
+            Tiles overlap by a 1 px halo (stride T − 1). Each tile contributes its inner core to the final edge canvas, mathematically matching full-image edge response without stitching seams.
+          </p>
+        </div>
+        <div class="bm-insight-card">
+          <div class="bm-insight-icon">⚛</div>
+          <h4 class="bm-insight-title">Classical Simulation Honesty</h4>
+          <p class="bm-insight-body">
+            State-vector amplitude simulation on classical CPUs is naturally slower than optimized C++ convolution filters. The benchmark demonstrates architectural validity and linear scaling, not classical speed advantage.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ───────────────────── ARCHITECTURE BAND ───────────────────── -->
   <section class="arch-band" id="architecture">
     <div class="arch-inner">
@@ -466,8 +634,8 @@
   <footer class="footer" id="footer">
     <div class="footer-inner">
       <div class="footer-brand">
-        <span class="nav-logo footer-logo">Q</span>
-        <span class="footer-name">Q-Edge</span>
+        <img src="./logo.png" alt="Logo" class="footer-logo">
+        <span class="footer-name">Quantum Edge Detection</span>
       </div>
       <p class="footer-disclaimer">
         <strong>Hybrid quantum-classical research prototype.</strong>

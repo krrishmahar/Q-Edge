@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from typing import Any
+
 from q_edge.classical import CLASSICAL_METHODS, canny
 from q_edge.config import Preset, QEdgeConfig
 from q_edge.data.synthetic import synthetic_shapes
@@ -142,3 +144,47 @@ def scaling_benchmark(
         df.insert(0, "height", height)
         frames.append(df)
     return pd.concat(frames, ignore_index=True)
+
+
+def dataframe_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Convert a benchmark DataFrame into clean, JSON-serializable records."""
+    records: list[dict[str, Any]] = []
+    for _, row in df.iterrows():
+        rec: dict[str, Any] = {}
+        for col, val in row.items():
+            if pd.isna(val):
+                rec[str(col)] = None
+            elif isinstance(val, (int, float, np.number)):
+                if np.isinf(val):
+                    rec[str(col)] = 999.0 if val > 0 else -999.0
+                elif isinstance(val, (np.floating, float)):
+                    rec[str(col)] = float(val)
+                else:
+                    rec[str(col)] = int(val)
+            else:
+                rec[str(col)] = str(val)
+        records.append(rec)
+    return records
+
+
+def benchmark_summary(df: pd.DataFrame) -> dict[str, Any]:
+    """Calculate summary statistics and winners from benchmark results."""
+    records = dataframe_to_records(df)
+    valid_runtimes = [r for r in records if r.get("runtime_s") is not None]
+    fastest = min(valid_runtimes, key=lambda r: r["runtime_s"]) if valid_runtimes else None
+
+    valid_f1 = [r for r in records if r.get("f1") is not None]
+    highest_f1 = max(valid_f1, key=lambda r: r["f1"]) if valid_f1 else None
+
+    qhed_row = next((r for r in records if r.get("method") == QUANTUM_METHOD), None)
+
+    return {
+        "fastest_method": fastest["method"] if fastest else None,
+        "fastest_runtime_s": fastest["runtime_s"] if fastest else None,
+        "highest_f1_method": highest_f1["method"] if highest_f1 else None,
+        "highest_f1_score": highest_f1["f1"] if highest_f1 else None,
+        "qhed_runtime_s": qhed_row["runtime_s"] if qhed_row else None,
+        "qhed_f1": qhed_row["f1"] if qhed_row else None,
+        "qhed_mp_s": qhed_row["megapixels_per_s"] if qhed_row else None,
+        "total_methods": len(records),
+    }

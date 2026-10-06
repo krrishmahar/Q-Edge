@@ -173,3 +173,41 @@ def test_decode_rejects_decompression_bomb(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
     with pytest.raises(UploadError, match="too large"):
         decode_upload(_encode(np.zeros((20, 20), dtype=np.uint8)))
+
+
+def test_baseline_benchmarks_structure() -> None:
+    from q_edge.ui import get_baseline_benchmarks
+
+    data = get_baseline_benchmarks()
+    assert "sample_benchmarks" in data
+    assert "synthetic_ground_truth" in data
+    assert "scaling_sweep" in data
+    assert "circuit_verification" in data
+    assert len(data["sample_benchmarks"]) == 5
+    assert len(data["scaling_sweep"]) == 4
+
+
+def test_process_benchmark_request_synthetic() -> None:
+    from q_edge.ui import process_benchmark_request
+
+    payload = {
+        "use_synthetic": True,
+        "width": 64,
+        "height": 64,
+        "methods": ["qhed", "canny"],
+    }
+    resp = process_benchmark_request(payload)
+    assert resp["status"] == "success"
+    assert len(resp["results"]) == 2
+    assert "summary" in resp
+    assert resp["summary"]["total_methods"] == 2
+
+
+def test_process_scaling_request_quick() -> None:
+    from q_edge.ui import process_scaling_request
+
+    payload = {"quick": True, "methods": ["qhed", "sobel"]}
+    resp = process_scaling_request(payload)
+    assert resp["status"] == "success"
+    assert len(resp["pivot_rows"]) == 3
+

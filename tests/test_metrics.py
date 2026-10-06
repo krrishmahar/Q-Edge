@@ -10,6 +10,8 @@ from q_edge.benchmark import (
     ALL_METHODS,
     BENCHMARK_COLUMNS,
     benchmark,
+    benchmark_summary,
+    dataframe_to_records,
     detect_edges,
     scaling_benchmark,
 )
@@ -162,3 +164,17 @@ def test_scaling_benchmark_long_format() -> None:
     assert len(df) == 4
     assert {"height", "width", "megapixels", "method", "runtime_s"} <= set(df.columns)
     assert df.loc[df["method"] == "qhed", "f1"].eq(1.0).all()
+
+
+def test_benchmark_serialization_and_summary() -> None:
+    df = benchmark(IMAGE, TRUTH, methods=("qhed", "canny"), config=QEdgeConfig(tile_size=8))
+    records = dataframe_to_records(df)
+    assert len(records) == 2
+    assert all(isinstance(r["method"], str) for r in records)
+    assert all("runtime_s" in r for r in records)
+
+    summary = benchmark_summary(df)
+    assert summary["fastest_method"] in ("qhed", "canny")
+    assert summary["highest_f1_score"] == pytest.approx(1.0)
+    assert summary["total_methods"] == 2
+

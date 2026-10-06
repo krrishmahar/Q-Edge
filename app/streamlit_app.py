@@ -15,7 +15,12 @@ from pathlib import Path
 import streamlit as st
 import streamlit.components.v1 as components
 
-from q_edge.ui import process_pipeline_request
+from q_edge.ui import (
+    get_baseline_benchmarks,
+    process_benchmark_request,
+    process_pipeline_request,
+    process_scaling_request,
+)
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
@@ -77,13 +82,10 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    def do_POST(self) -> None:
-        if self.path == "/api/process":
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
+    def do_GET(self) -> None:
+        if self.path in ("/api/benchmark", "/api/benchmarks_baseline"):
             try:
-                payload = json.loads(body.decode("utf-8"))
-                response_data = process_pipeline_request(payload)
+                response_data = get_baseline_benchmarks()
                 resp_bytes = json.dumps(response_data).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -102,6 +104,38 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            payload = json.loads(body.decode("utf-8")) if body else {}
+            if self.path == "/api/process":
+                response_data = process_pipeline_request(payload)
+            elif self.path == "/api/benchmark":
+                response_data = process_benchmark_request(payload)
+            elif self.path == "/api/scaling":
+                response_data = process_scaling_request(payload)
+            else:
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            resp_bytes = json.dumps(response_data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+        except Exception as exc:
+            err_bytes = json.dumps({"status": "error", "message": str(exc)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(err_bytes)))
+            self.end_headers()
+            self.wfile.write(err_bytes)
 
     def log_message(self, format: str, *args: object) -> None:
         pass
@@ -136,7 +170,13 @@ def get_html_content() -> str:
     )
 
     port = ensure_backend_server()
-    backend_setup = f"window.__BACKEND_API__ = 'http://127.0.0.1:{port}/api/process';\n"
+    baseline_json = json.dumps(get_baseline_benchmarks())
+    backend_setup = (
+        f"window.__BACKEND_API__ = 'http://127.0.0.1:{port}/api/process';\n"
+        f"window.__BENCHMARK_API__ = 'http://127.0.0.1:{port}/api/benchmark';\n"
+        f"window.__SCALING_API__ = 'http://127.0.0.1:{port}/api/scaling';\n"
+        f"window.__INITIAL_BENCHMARKS__ = {baseline_json};\n"
+    )
 
     LOGO_PATH = STATIC_DIR / "logo.png"
     if LOGO_PATH.exists():
