@@ -36,7 +36,7 @@ uv add --dev <pkg>         # dev dependency
 | `tests/test_quantum.py` | Encoding, the decrement unitary, gradient/constant/zero tiles, fast vs circuit agreement, shots, circuit size |
 | `tests/test_tiling.py` | Lossless round trip, tiled equals untiled, seams, odd sizes, batches, validation |
 | `tests/test_pipeline.py` | Config validation, loaders (bytes/path/PIL/array/16-bit), preprocess, pipeline, 4K (`slow`) |
-| `tests/test_backends.py` | Registry, plug-in backend, backend agreement, GPU fallback and pickling, hardware stub, parallel equals serial, resources |
+| `tests/test_backends.py` | Registry, plug-in backend, backend agreement, GPU capability and pickling, hardware stub, parallel equals serial, resources |
 | `tests/test_metrics.py` | Classical detectors, SSIM/PSNR/F1, tolerance, perf, `benchmark()`, `scaling_benchmark()` |
 | `tests/test_ui.py` | Upload validation and hardening, helpers, charts, and headless `AppTest` runs of the Streamlit app |
 
@@ -48,6 +48,16 @@ Status at the last run: **165 passed**, coverage about **98%**, ruff and mypy cl
 uv run streamlit run app/streamlit_app.py --server.headless true --server.port 8599
 curl http://localhost:8599/_stcore/health     # -> ok
 ```
+
+For CUDA validation, install the optional dependency and query the real device:
+
+```bash
+uv sync --extra gpu
+uv run python -c "from q_edge.backends.gpu_backend import gpu_status; print(gpu_status())"
+```
+
+The status is usable only after a CuPy kernel succeeds. The embedded frontend receives the
+same capability data from `/api/capabilities` and disables the GPU option when it is not usable.
 
 `AppTest` in `tests/test_ui.py` executes the full script (sample image, Aer backend, hardware
 stub) without a browser.

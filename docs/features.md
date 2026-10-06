@@ -38,7 +38,7 @@ the code.
 | Plug-in registry | `register_backend("name", factory)`; a test adds a custom backend without touching the pipeline | `register_backend` |
 | NumPy backend | Default; exact and fast | [`numpy_backend.py`](../src/q_edge/backends/numpy_backend.py) |
 | Aer backend | Real circuits; `shots` and `seed` taken from the config | [`aer_backend.py`](../src/q_edge/backends/aer_backend.py) |
-| GPU backend | CuPy when a CUDA device is present, otherwise a logged fallback to NumPy; picklable | [`gpu_backend.py`](../src/q_edge/backends/gpu_backend.py) |
+| GPU backend | CuPy on a verified CUDA device; unavailable GPU selection reports an explicit error | [`gpu_backend.py`](../src/q_edge/backends/gpu_backend.py) |
 | Hardware stub | IBM Runtime placeholder that raises `NotConfiguredError` with setup instructions; no network | [`hardware_stub.py`](../src/q_edge/backends/hardware_stub.py) |
 | Parallel executor | Thread pool (default), process pool or serial; chunked batches; bounded in-flight work; order-preserving | [`scheduler/executor.py`](../src/q_edge/scheduler/executor.py) |
 | Resource awareness | Detects CPU count, RAM and GPU; picks tile size, workers and batch size automatically | [`scheduler/resources.py`](../src/q_edge/scheduler/resources.py) |
@@ -85,9 +85,11 @@ the code.
 
 ## Known limitations
 
-- The quantum path is simulated, so it shows no speedup (OpenCV is 5-10x faster).
+- The quantum path is simulated. NumPy is slower than OpenCV, while the optional CUDA backend
+  accelerates the classical simulation; neither result is quantum speedup.
 - The synthetic ground truth uses the forward-difference convention, which favours QHED.
-- The GPU backend has not been run on real CUDA hardware.
+- The GPU backend has been validated on an RTX 3050 with CuPy 14.2.0; performance depends on
+  the installed driver, CUDA toolkit and workload size.
 - The IBM hardware backend is a stub.
 - The metrics table shows `None` instead of `-` under `tiles_per_s` for classical methods
   (cosmetic).

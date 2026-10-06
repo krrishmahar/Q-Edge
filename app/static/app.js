@@ -17,6 +17,7 @@
 const TILE_QUBITS = { 64: 13, 128: 15, 256: 17, 512: 19 };
 const BACKEND_LABELS = {
   numpy: 'Ideal Simulation',
+  gpu:   'CUDA GPU (CuPy)',
   aer:   'Noisy Simulation (Aer)',
   ibm:   'IBM Quantum (stub)',
 };
@@ -700,6 +701,15 @@ function wireSegmented(groupId, callback) {
 }
 
 function init() {
+  const gpuOption = $('gpu-backend-option');
+  const gpu = (window.__CAPABILITIES__ || {}).gpu || {};
+  if (gpuOption && !gpu.usable) {
+    gpuOption.disabled = true;
+    gpuOption.title = gpu.reason || 'CUDA GPU unavailable';
+  } else if (gpuOption) {
+    gpuOption.textContent = `CUDA GPU (${gpu.name || 'CuPy'})`;
+  }
+
   /* ── Initial circuit render ── */
   renderCircuit($('circuit-canvas'), 17, false);
   renderCircuit($('mini-circuit-canvas'), 17, true);
@@ -1404,4 +1414,3 @@ function debounce(fn, ms) {
 }
 
 document.addEventListener('DOMContentLoaded', init);
-

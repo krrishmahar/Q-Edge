@@ -8,7 +8,7 @@ import os
 import sys
 from dataclasses import dataclass
 
-from q_edge.backends.gpu_backend import load_cupy
+from q_edge.backends.gpu_backend import gpu_status
 
 _FALLBACK_MEMORY = 4 * 1024**3
 
@@ -87,7 +87,7 @@ def detect_resources() -> SystemResources:
         cpu_count=os.cpu_count() or 1,
         total_memory=total,
         available_memory=available,
-        gpu_available=load_cupy() is not None,
+        gpu_available=gpu_status().usable,
     )
 
 
@@ -109,6 +109,7 @@ def auto_settings(
     h, w = image_shape
     pixels = h * w
     circuit = backend.lower() in {"aer", "ibm-hardware"}
+    gpu = backend.lower() == "gpu"
 
     if circuit:
         tile_size = 4
@@ -118,10 +119,12 @@ def auto_settings(
         budget = res.available_memory * _BATCH_MEMORY_FRACTION
         batch_size = int(budget // (tile_size * tile_size * _BYTES_PER_PIXEL_FAST))
         batch_size = max(256, min(batch_size, 65_536))
+        if gpu:
+            batch_size = max(batch_size, 4_096)
 
     stride = tile_size - 1
     num_tiles = math.ceil(h / stride) * math.ceil(w / stride)
     num_batches = math.ceil(num_tiles / batch_size)
     cpu_cap = min(res.cpu_count, 4) if circuit else res.cpu_count
-    workers = max(1, min(cpu_cap, num_batches))
+    workers = 1 if gpu else max(1, min(cpu_cap, num_batches))
     return AutoSettings(tile_size=tile_size, workers=workers, batch_size=batch_size)

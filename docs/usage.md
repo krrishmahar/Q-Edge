@@ -150,6 +150,6 @@ See [api.md](api.md) for the full reference.
 |---|---|
 | `uv: command not found` | Add `%USERPROFILE%\.local\bin` (Windows) or `~/.local/bin` to `PATH`, or restart the shell |
 | Aer runs take 10+ seconds | Expected; Aer simulates two circuits per tile. Use `numpy` for real images |
-| GPU backend shows the same speed as NumPy | CuPy or CUDA is not available, so the backend falls back to NumPy (a warning is logged) |
+| GPU option is disabled | CuPy, CUDA headers, or a usable CUDA device is unavailable; inspect `/api/capabilities` |
 | Metrics show `None` under `tiles_per_s` for classical rows | Known cosmetic issue: the value is not applicable to classical methods and should display as `-` |
 | Port 8501 is busy | `uv run streamlit run app/streamlit_app.py --server.port 8502` |

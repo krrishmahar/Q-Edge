@@ -88,6 +88,14 @@ def test_prepare_for_backend_caps_circuit_backends() -> None:
     assert cfg.tile_size == 4 and note is not None and "aer" in note
 
 
+def test_gpu_capabilities_is_json_safe() -> None:
+    from q_edge.ui import gpu_capabilities
+
+    capabilities = gpu_capabilities()
+    assert {"available", "usable", "name", "reason"} <= capabilities.keys()
+    assert isinstance(capabilities["usable"], bool)
+
+
 def test_preview_and_downscale() -> None:
     big = np.random.default_rng(0).random((2000, 3000))
     out = preview(big, max_side=300)
@@ -210,4 +218,3 @@ def test_process_scaling_request_quick() -> None:
     resp = process_scaling_request(payload)
     assert resp["status"] == "success"
     assert len(resp["pivot_rows"]) == 3
-

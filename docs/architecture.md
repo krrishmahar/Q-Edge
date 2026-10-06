@@ -162,7 +162,7 @@ app/streamlit_app.py
 | Dataclasses instead of pydantic | One fewer dependency; validation in `__post_init__` |
 | Threads over processes | Measured 3x faster at 4K; behaves well inside Streamlit on Windows |
 | Canny as the reference for uploads | Photos have no ground truth; documented in the UI |
-| CuPy not a dependency | Optional acceleration; fallback keeps the app working everywhere |
+| CuPy optional dependency | CPU installation works everywhere; selected GPU execution requires a verified CUDA runtime |
 | Hardware stub raises | Better to fail loudly than to fake results |
 
 The full log, with measurements, is in [DECISIONS.md](../DECISIONS.md).

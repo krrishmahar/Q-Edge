@@ -17,7 +17,7 @@ from q_edge.backends import (
     get_backend,
     register_backend,
 )
-from q_edge.backends.gpu_backend import qhed_edge_magnitude_xp
+from q_edge.backends.gpu_backend import gpu_status, qhed_edge_magnitude_xp
 from q_edge.config import ExecutorKind, QEdgeConfig
 from q_edge.pipeline import run_pipeline
 from q_edge.quantum.qhed_fast import qhed_edge_magnitude
@@ -223,3 +223,14 @@ def test_load_cupy_without_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     assert gpu_backend.load_cupy() is None
     fake.cuda.runtime.getDeviceCount = lambda: 1  # type: ignore[attr-defined]
     assert gpu_backend.load_cupy() is fake
+
+
+def test_gpu_status_reports_real_capability() -> None:
+    status = gpu_status()
+    if status.usable:
+        assert status.available
+        assert status.name
+        assert status.cupy_version
+        assert status.memory_total_mb is not None
+    else:
+        assert status.reason

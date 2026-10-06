@@ -15,6 +15,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PIL import Image, UnidentifiedImageError
 
+from q_edge.backends.gpu_backend import gpu_status
 from q_edge.config import QEdgeConfig
 from q_edge.imaging import FloatArray
 from q_edge.pipeline import load_image, preprocess
@@ -39,6 +40,20 @@ PREVIEW_MAX_SIDE = 1024
 
 #: Longest side of the interactive difference heatmap (one plotly cell per pixel).
 HEATMAP_MAX_SIDE = 360
+
+
+def gpu_capabilities() -> dict[str, Any]:
+    """Return JSON-safe CUDA capability information for the frontend."""
+    status = gpu_status()
+    return {
+        "available": status.available,
+        "usable": status.usable,
+        "name": status.name,
+        "compute_capability": status.compute_capability,
+        "memory_total_mb": status.memory_total_mb,
+        "cupy_version": status.cupy_version,
+        "reason": status.reason,
+    }
 
 
 class UploadError(ValueError):
@@ -176,6 +191,10 @@ def process_pipeline_request(payload: dict[str, Any]) -> dict[str, Any]:
     tile_size = int(payload.get("tile_size", 8))
     sim_tile_size = tile_size if tile_size in (4, 8, 16) else 8
     backend = str(payload.get("backend", "numpy"))
+    if backend == "gpu":
+        capabilities = gpu_capabilities()
+        if not capabilities["usable"]:
+            raise ValueError(f"CUDA GPU backend is unavailable: {capabilities['reason']}")
     threshold = float(payload.get("threshold", 0.2))
     raw_shots = payload.get("shots")
     shots = int(raw_shots) if raw_shots is not None and str(raw_shots).isdigit() else None
@@ -245,6 +264,7 @@ def process_pipeline_request(payload: dict[str, Any]) -> dict[str, Any]:
             "width": w,
             "height": h,
             "backend": backend,
+            "gpu": gpu_capabilities() if backend == "gpu" else None,
         },
         "tile_stages": tile_stages,
     }
@@ -604,4 +624,3 @@ def process_scaling_request(payload: dict[str, Any]) -> dict[str, Any]:
         "sweep_records": records,
         "pivot_rows": list(grouped.values()),
     }
-

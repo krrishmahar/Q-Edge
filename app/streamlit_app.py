@@ -17,6 +17,7 @@ import streamlit.components.v1 as components
 
 from q_edge.ui import (
     get_baseline_benchmarks,
+    gpu_capabilities,
     process_benchmark_request,
     process_pipeline_request,
     process_scaling_request,
@@ -83,7 +84,16 @@ class APIHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self) -> None:
-        if self.path in ("/api/benchmark", "/api/benchmarks_baseline"):
+        if self.path == "/api/capabilities":
+            response_data = {"status": "success", "gpu": gpu_capabilities()}
+            resp_bytes = json.dumps(response_data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(resp_bytes)))
+            self.end_headers()
+            self.wfile.write(resp_bytes)
+        elif self.path in ("/api/benchmark", "/api/benchmarks_baseline"):
             try:
                 response_data = get_baseline_benchmarks()
                 resp_bytes = json.dumps(response_data).encode("utf-8")
@@ -175,6 +185,7 @@ def get_html_content() -> str:
         f"window.__BACKEND_API__ = 'http://127.0.0.1:{port}/api/process';\n"
         f"window.__BENCHMARK_API__ = 'http://127.0.0.1:{port}/api/benchmark';\n"
         f"window.__SCALING_API__ = 'http://127.0.0.1:{port}/api/scaling';\n"
+        f"window.__CAPABILITIES__ = {json.dumps({'gpu': gpu_capabilities()})};\n"
         f"window.__INITIAL_BENCHMARKS__ = {baseline_json};\n"
     )
 

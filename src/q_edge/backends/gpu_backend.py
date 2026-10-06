@@ -1,12 +1,12 @@
-"""Optional GPU backend using CuPy, with a graceful fallback to NumPy.
+"""CUDA backend using CuPy.
 
-CuPy is not a project dependency. When it is missing, or no CUDA device is available, the
-backend logs a warning and runs the identical NumPy computation instead.
+CuPy remains optional, but selecting this backend never disguises CPU execution as GPU
+execution. Capability probing is separate from backend execution so the UI can disable the
+option before a request is submitted.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from types import ModuleType
 from typing import Any
@@ -18,7 +18,18 @@ from q_edge.config import QEdgeConfig
 from q_edge.quantum.encoding import ZERO_NORM_EPS
 from q_edge.quantum.qhed_fast import AMPLITUDE_TO_DIFFERENCE
 
-logger = logging.getLogger(__name__)
+
+@dataclass(frozen=True)
+class GpuStatus:
+    """Observable CUDA capability information for the current Python environment."""
+
+    available: bool
+    usable: bool
+    name: str | None = None
+    compute_capability: str | None = None
+    memory_total_mb: float | None = None
+    cupy_version: str | None = None
+    reason: str | None = None
 
 
 def load_cupy() -> ModuleType | None:
@@ -32,6 +43,47 @@ def load_cupy() -> ModuleType | None:
         return None
     module: ModuleType = cupy
     return module
+
+
+def gpu_status() -> GpuStatus:
+    """Probe CUDA and run a tiny CuPy kernel before reporting the GPU as usable."""
+    try:
+        import cupy
+    except ImportError:
+        return GpuStatus(False, False, reason="CuPy is not installed.")
+
+    try:
+        if cupy.cuda.runtime.getDeviceCount() < 1:
+            return GpuStatus(
+                False,
+                False,
+                cupy_version=cupy.__version__,
+                reason="No CUDA device was found.",
+            )
+        device = cupy.cuda.Device(0)
+        props = cupy.cuda.runtime.getDeviceProperties(0)
+        name = props["name"]
+        if isinstance(name, bytes):
+            name = name.decode()
+        probe = cupy.array([1], dtype=cupy.int32) + 1
+        probe.item()
+        device.synchronize()
+        total = cupy.cuda.Device(0).mem_info[1] / 1024**2
+        return GpuStatus(
+            True,
+            True,
+            name=str(name),
+            compute_capability=str(device.compute_capability),
+            memory_total_mb=round(total, 1),
+            cupy_version=cupy.__version__,
+        )
+    except Exception as exc:
+        return GpuStatus(
+            True,
+            False,
+            cupy_version=cupy.__version__,
+            reason=f"CUDA is visible but a CuPy kernel failed: {exc}",
+        )
 
 
 def qhed_edge_magnitude_xp(tiles: Any, xp: ModuleType) -> Any:
@@ -60,7 +112,7 @@ def qhed_edge_magnitude_xp(tiles: Any, xp: ModuleType) -> Any:
 
 @dataclass
 class GpuBackend:
-    """CuPy-accelerated exact simulation; falls back to NumPy when CUDA is unavailable."""
+    """CuPy-accelerated exact simulation that requires a usable CUDA device."""
 
     name: str = "gpu"
     _xp: ModuleType | None = field(default=None, init=False, repr=False)
@@ -76,14 +128,15 @@ class GpuBackend:
             self._xp = load_cupy()
             self._checked = True
             if self._xp is None:
-                logger.warning("CuPy/CUDA not available; GPU backend is falling back to NumPy.")
-        return self._xp if self._xp is not None else np
+                status = gpu_status()
+                raise RuntimeError(status.reason or "CUDA GPU is unavailable.")
+        return self._xp
 
     def run_tiles(self, batch: FloatArray) -> FloatArray:
         """Return QHED edge magnitudes, computed on the GPU when possible."""
         xp = self._array_module()
         out = qhed_edge_magnitude_xp(batch, xp)
-        result: FloatArray = np.asarray(out.get() if xp is not np else out, dtype=np.float64)
+        result: FloatArray = np.asarray(out.get(), dtype=np.float64)
         return result
 
     def __getstate__(self) -> dict[str, Any]:

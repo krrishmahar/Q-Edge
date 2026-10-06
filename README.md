@@ -10,9 +10,10 @@ needs more circuits, not bigger ones. A Streamlit app shows the quantum result b
 Prewitt, Canny and Laplacian, with metrics, charts and an architecture view.
 
 > **Honest scope.** All quantum results come from classical simulation. Simulation is correct
-> (it matches real Qiskit circuits to about 1e-11) but gives **no speedup**: OpenCV filters are
-> 5-10x faster. This prototype demonstrates the architecture, correctness and linear scaling.
-> It does not demonstrate quantum advantage.
+> (it matches real Qiskit circuits to about 1e-11). The NumPy simulator is slower than OpenCV,
+> while the optional CUDA backend is a classical GPU acceleration of that simulation. This
+> prototype demonstrates the architecture and correctness; it does not demonstrate quantum
+> advantage.
 
 ## Quickstart
 
@@ -22,6 +23,15 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+.
 uv sync
 uv run streamlit run app/streamlit_app.py
 ```
+
+For CUDA acceleration, install the optional CuPy CUDA 13 package:
+
+```bash
+uv sync --extra gpu
+```
+
+The app runs a real CuPy kernel before enabling the CUDA GPU option. If CuPy, CUDA headers,
+or a usable device are unavailable, the option is disabled instead of silently using the CPU.
 
 The app opens with a bundled sample image. Upload any PNG or JPEG up to 3840x2160 to process
 your own.
@@ -69,7 +79,7 @@ flowchart LR
   C --> D[Scheduler<br/>auto workers / batch size]
   D --> E1[NumPy backend]
   D --> E2[Aer backend]
-  D --> E3[GPU backend<br/>CuPy, NumPy fallback]
+  D --> E3[GPU backend<br/>CuPy, verified CUDA]
   D --> E4[IBM hardware stub]
   E1 & E2 & E3 & E4 --> F[Stitch cores<br/>seam-free]
   F --> G[Normalise + threshold]
@@ -137,6 +147,12 @@ All methods scale roughly linearly with pixel count.
 **Fast vs circuit:** on a 64x64 crop with 4x4 tiles, the maximum absolute difference between
 the NumPy path and real Aer circuits is 5.76e-12 (Aer took ~12.0 s).
 
+**CUDA validation:** on an NVIDIA GeForce RTX 3050 6GB Laptop GPU (compute capability 8.6,
+CuPy 14.2.0, CUDA toolkit 13.4), the real CuPy backend produced a maximum absolute error of
+4.44e-16 against NumPy on 128 16x16 tiles. With one worker, it reached 26.0 MP/s at 512x512,
+38.4 MP/s at 1920x1080, and 23.9 MP/s at 3840x2160. NumPy reached 8.0, 8.5, and 6.2 MP/s,
+respectively, for measured GPU speedups of 3.27x, 4.54x, and 3.86x.
+
 ## Limitations
 
 - **No quantum advantage.** The quantum path is simulated, and simulation is slower than
@@ -151,8 +167,8 @@ the NumPy path and real Aer circuits is 5.76e-12 (Aer took ~12.0 s).
   simulated (`shots=` on the Aer backend), but device noise is not.
 - **The Aer backend is slow.** It simulates two circuits per tile, so the app limits it to
   images of at most 64 px and 4x4 tiles.
-- **The GPU backend is untested on CUDA.** It falls back to NumPy without CuPy; its array
-  code is tested through NumPy.
+- **CUDA acceleration requires the optional `gpu` extra.** Selected GPU execution reports an
+  explicit capability error rather than falling back to NumPy.
 - **The hardware backend is a stub.** It raises `NotConfiguredError`, and the app makes no
   network calls.
 

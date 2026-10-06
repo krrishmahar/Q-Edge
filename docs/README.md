@@ -37,7 +37,7 @@ Then open http://localhost:8501.
 |---|---|
 | QHED fast path (NumPy) and circuit path (Qiskit Aer) | Done; agree to about 1e-11 |
 | Seam-free tiling up to 3840x2160 | Done; a 4K frame takes about 1 s |
-| Backends: NumPy, Aer, GPU (CuPy with fallback), IBM hardware stub | Done; GPU not exercised on real CUDA |
+| Backends: NumPy, Aer, GPU (verified CuPy CUDA), IBM hardware stub | Done; GPU validated on RTX 3050 |
 | Classical baselines and metrics | Done |
 | Streamlit app | Done |
 | Tests | 165 passing, about 98% coverage, ruff and mypy clean |
