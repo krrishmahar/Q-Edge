@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Q-Edge — Quantum-Assisted Edge Detection</title>
+  <meta name="description" content="Q-Edge is a hybrid quantum-classical edge detection prototype using QPIE amplitude encoding and QHED Hadamard circuits, demonstrated at hackathon scale." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ───────────────────── TOP NAV ───────────────────── -->
+  <nav class="top-nav" id="top-nav">
+    <div class="nav-inner">
+      <a href="#" class="nav-brand" id="nav-brand">
+        <span class="nav-logo">Q</span>
+        <span class="nav-wordmark">Q-Edge</span>
+      </a>
+      <div class="nav-center">
+        <a href="#controls" class="nav-link">Configure</a>
+        <a href="#visualization" class="nav-link">Visualize</a>
+        <a href="#results" class="nav-link">Results</a>
+        <a href="#architecture" class="nav-link">Architecture</a>
+      </div>
+      <div class="nav-right">
+        <span class="status-badge" id="status-badge">
+          <span class="status-dot"></span>
+          Simulation Ready
+        </span>
+        <button class="btn-secondary btn-sm" id="info-btn">About</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ───────────────────── HERO ───────────────────── -->
+  <section class="hero-band" id="hero">
+    <div class="hero-inner">
+      <div class="hero-left">
+        <span class="badge-pill">Hybrid Quantum · Classical</span>
+        <h1 class="display-xl">Q-Edge</h1>
+        <p class="hero-sub">Quantum-Assisted Edge Detection<br/>using QPIE + QHED</p>
+        <p class="hero-body">
+          Spatial tiling maps image patches into quantum amplitude states.
+          Hadamard-based circuits extract horizontal and vertical gradients.
+          Results are stitched back at full resolution.
+        </p>
+        <div class="hero-actions">
+          <a href="#controls" class="btn-primary" id="hero-cta">Start Demo</a>
+          <a href="#architecture" class="btn-secondary">How it works</a>
+        </div>
+        <div class="pipeline-label">
+          <code>4K → Tiles → QPIE → QHED → Stitch → 4K</code>
+        </div>
+      </div>
+      <div class="hero-right">
+        <div class="circuit-card" id="circuit-card">
+          <div class="circuit-header">
+            <span class="circuit-title">QHED Circuit</span>
+            <span class="badge-pill badge-quantum">17 qubits</span>
+          </div>
+          <div class="circuit-diagram" id="circuit-diagram" aria-label="Quantum circuit visualization">
+            <canvas id="circuit-canvas" width="380" height="220"></canvas>
+          </div>
+          <div class="circuit-stats">
+            <div class="stat-row">
+              <span class="stat-label">Qubits</span>
+              <span class="stat-value" id="hero-qubits">17</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Depth</span>
+              <span class="stat-value" id="hero-depth">24</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Gates</span>
+              <span class="stat-value" id="hero-gates">68</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────── MAIN APP ───────────────────── -->
+  <main class="app-layout" id="app-main">
+
+    <!-- LEFT CONTROLS -->
+    <aside class="controls-panel" id="controls">
+      <h2 class="panel-title">Configure</h2>
+
+      <!-- Upload -->
+      <div class="control-group" id="upload-group">
+        <label class="control-label" for="image-upload">Image</label>
+        <div class="upload-zone" id="upload-zone" role="button" tabindex="0" aria-label="Upload image">
+          <input type="file" id="image-upload" accept=".png,.jpg,.jpeg" hidden />
+          <div class="upload-icon">↑</div>
+          <div class="upload-text">Drop or click to upload</div>
+          <div class="upload-hint">PNG / JPEG · max 50 MB</div>
+        </div>
+        <div class="image-info" id="image-info" hidden>
+          <span id="img-name" class="img-name"></span>
+          <span id="img-dims" class="img-dims"></span>
+        </div>
+      </div>
+
+      <!-- Tile Size -->
+      <div class="control-group">
+        <label class="control-label">Tile Size</label>
+        <div class="segmented" id="tile-size-group" role="group" aria-label="Tile size">
+          <button class="seg-btn" data-value="64"  id="tile-64">64</button>
+          <button class="seg-btn" data-value="128" id="tile-128">128</button>
+          <button class="seg-btn seg-active" data-value="256" id="tile-256">256</button>
+          <button class="seg-btn" data-value="512" id="tile-512">512</button>
+        </div>
+      </div>
+
+      <!-- Halo -->
+      <div class="control-group">
+        <label class="control-label" for="halo-input">Halo <span class="unit">px</span></label>
+        <input type="number" id="halo-input" class="text-input" min="0" max="4" value="1" />
+      </div>
+
+      <!-- Backend -->
+      <div class="control-group">
+        <label class="control-label" for="backend-select">Backend</label>
+        <select id="backend-select" class="text-input select-input">
+          <option value="numpy">Ideal Simulation (NumPy)</option>
+          <option value="aer">Noisy Simulation (Aer)</option>
+          <option value="ibm">IBM Quantum (stub)</option>
+        </select>
+      </div>
+
+      <!-- Shots (conditional) -->
+      <div class="control-group" id="shots-group" hidden>
+        <label class="control-label" for="shots-input">Shots</label>
+        <input type="number" id="shots-input" class="text-input" min="64" max="1000000" value="4096" step="512" />
+      </div>
+
+      <!-- Threshold -->
+      <div class="control-group">
+        <label class="control-label">Threshold</label>
+        <div class="segmented" id="threshold-type-group" role="group" aria-label="Threshold type">
+          <button class="seg-btn seg-active" data-value="fixed" id="thresh-fixed">Fixed</button>
+          <button class="seg-btn" data-value="adaptive" id="thresh-adaptive">Adaptive</button>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="threshold-slider" class="slider" min="0" max="100" value="20" />
+          <span class="slider-value" id="threshold-value">0.20</span>
+        </div>
+      </div>
+
+      <!-- Processing Mode -->
+      <div class="control-group">
+        <label class="control-label">Processing Mode</label>
+        <div class="segmented" id="mode-group" role="group" aria-label="Processing mode">
+          <button class="seg-btn seg-active" data-value="demo" id="mode-demo">Demo</button>
+          <button class="seg-btn" data-value="full4k" id="mode-full4k">Full 4K</button>
+        </div>
+      </div>
+
+      <button class="btn-primary btn-run" id="run-btn">Run Q-Edge</button>
+
+      <!-- Technical summary -->
+      <div class="tech-summary" id="tech-summary">
+        <div class="tech-row">
+          <span class="tech-key">Tiles</span>
+          <span class="tech-val" id="s-tiles">—</span>
+        </div>
+        <div class="tech-row">
+          <span class="tech-key">Tile</span>
+          <span class="tech-val" id="s-tile-dim">256×256</span>
+        </div>
+        <div class="tech-row">
+          <span class="tech-key">Padded</span>
+          <span class="tech-val" id="s-padded">131 072</span>
+        </div>
+        <div class="tech-row">
+          <span class="tech-key">Qubits</span>
+          <span class="tech-val" id="s-qubits">17</span>
+        </div>
+        <div class="tech-row">
+          <span class="tech-key">Backend</span>
+          <span class="tech-val" id="s-backend">Ideal Simulation</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER VISUALIZATION -->
+    <section class="viz-panel" id="visualization">
+      <!-- Tabs -->
+      <div class="tab-bar" role="tablist" id="viz-tabs">
+        <button class="tab tab-active" role="tab" aria-selected="true"  id="tab-original" data-tab="original">Original</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-qhed"     data-tab="qhed">QHED</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-sobel"    data-tab="sobel">Sobel</button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-canny"    data-tab="canny">Canny</button>
+      </div>
+
+      <!-- Image Stage -->
+      <div class="image-stage" id="image-stage">
+        <div class="stage-empty" id="stage-empty">
+          <div class="empty-icon">⬡</div>
+          <p>Upload an image and press <strong>Run Q-Edge</strong> to begin.</p>
+          <p class="empty-hint">Or use the bundled sample image.</p>
+        </div>
+
+        <div class="stage-image" id="stage-image" hidden>
+          <div class="image-toolbar" id="image-toolbar">
+            <button class="tool-btn" id="btn-zoom-in"  title="Zoom in"  aria-label="Zoom in">+</button>
+            <button class="tool-btn" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+            <button class="tool-btn" id="btn-fit"      title="Fit"      aria-label="Fit to screen">⤢</button>
+            <span class="tool-sep"></span>
+            <button class="tool-btn tool-compare" id="btn-compare" title="Before/after" aria-label="Before/after compare">◐</button>
+          </div>
+          <div class="image-viewport" id="image-viewport">
+            <img id="main-image" alt="Processed result" draggable="false" />
+            <div class="compare-overlay" id="compare-overlay" hidden>
+              <img id="compare-image" alt="Comparison result" draggable="false" />
+              <div class="compare-divider" id="compare-divider"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stage-progress" id="stage-progress" hidden>
+          <div class="progress-label" id="progress-label">Processing tiles 0 / 120</div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+          </div>
+          <div class="progress-sub" id="progress-sub">Initializing QHED circuits…</div>
+        </div>
+      </div>
+
+      <!-- Tile inspector -->
+      <div class="tile-inspector" id="tile-inspector" hidden>
+        <div class="inspector-header">
+          <span class="inspector-title">Tile Inspector</span>
+          <span class="inspector-coords" id="inspector-coords">Tile 0,0</span>
+          <button class="close-btn" id="close-inspector" aria-label="Close">✕</button>
+        </div>
+        <div class="pipeline-stages" id="pipeline-stages" role="tablist">
+          <button class="stage-btn stage-active" data-stage="original"   id="ps-original">Original</button>
+          <button class="stage-btn" data-stage="gray"       id="ps-gray">Grayscale</button>
+          <button class="stage-btn" data-stage="normalized" id="ps-normalized">Normalized</button>
+          <button class="stage-btn" data-stage="qpie"       id="ps-qpie">QPIE</button>
+          <button class="stage-btn" data-stage="qhed"       id="ps-qhed">QHED</button>
+          <button class="stage-btn" data-stage="gx"         id="ps-gx">Gx</button>
+          <button class="stage-btn" data-stage="gy"         id="ps-gy">Gy</button>
+          <button class="stage-btn" data-stage="magnitude"  id="ps-magnitude">Magnitude</button>
+          <button class="stage-btn" data-stage="edges"      id="ps-edges">Edges</button>
+        </div>
+        <div class="inspector-canvas-wrap">
+          <canvas id="inspector-canvas" width="256" height="256" aria-label="Tile pipeline stage view"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT QUANTUM DETAILS -->
+    <aside class="quantum-panel" id="quantum-details">
+      <h2 class="panel-title">Quantum Details</h2>
+
+      <div class="detail-card detail-card-teal" id="qpie-card">
+        <div class="detail-card-label">QPIE</div>
+        <div class="detail-card-title">Amplitude Encoding</div>
+        <div class="detail-rows">
+          <div class="detail-row">
+            <span class="dr-key">Vector</span>
+            <span class="dr-val" id="d-vector">131 072</span>
+          </div>
+          <div class="detail-row">
+            <span class="dr-key">Normalized</span>
+            <span class="dr-val check" id="d-normalized">✓</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-card detail-card-lavender" id="qhed-card">
+        <div class="detail-card-label">QHED</div>
+        <div class="detail-card-title">Hadamard Edge Detection</div>
+        <div class="detail-rows">
+          <div class="detail-row">
+            <span class="dr-key">Horizontal</span>
+            <span class="dr-val check">✓</span>
+          </div>
+          <div class="detail-row">
+            <span class="dr-key">Vertical</span>
+            <span class="dr-val check">✓</span>
+          </div>
+          <div class="detail-row">
+            <span class="dr-key">Gradient</span>
+            <span class="dr-val">Gx + Gy</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-card detail-card-cream" id="circuit-summary-card">
+        <div class="detail-card-label">Circuit</div>
+        <div class="detail-card-title">Per-tile Circuit</div>
+        <div class="circuit-mini" id="circuit-mini">
+          <canvas id="mini-circuit-canvas" width="200" height="120" aria-label="Mini circuit diagram"></canvas>
+        </div>
+        <div class="detail-rows">
+          <div class="detail-row">
+            <span class="dr-key">Qubits</span>
+            <span class="dr-val" id="d-qubits">17</span>
+          </div>
+          <div class="detail-row">
+            <span class="dr-key">Depth</span>
+            <span class="dr-val" id="d-depth">24</span>
+          </div>
+          <div class="detail-row">
+            <span class="dr-key">Gates</span>
+            <span class="dr-val" id="d-gates">68</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ───────────────────── RESULTS BAND ───────────────────── -->
+  <section class="results-band" id="results" hidden>
+    <div class="results-inner">
+      <h2 class="display-sm">Results</h2>
+
+      <div class="metrics-grid" id="metrics-grid">
+        <div class="metric-card" id="mc-execution">
+          <div class="metric-val" id="m-execution">—</div>
+          <div class="metric-label">Execution</div>
+        </div>
+        <div class="metric-card" id="mc-preprocess">
+          <div class="metric-val" id="m-preprocess">—</div>
+          <div class="metric-label">Preprocess</div>
+        </div>
+        <div class="metric-card" id="mc-stitch">
+          <div class="metric-val" id="m-stitch">—</div>
+          <div class="metric-label">Stitching</div>
+        </div>
+        <div class="metric-card" id="mc-qubits">
+          <div class="metric-val" id="m-qubits">17</div>
+          <div class="metric-label">Qubits</div>
+        </div>
+        <div class="metric-card" id="mc-depth">
+          <div class="metric-val" id="m-depth">24</div>
+          <div class="metric-label">Depth</div>
+        </div>
+        <div class="metric-card" id="mc-tiles">
+          <div class="metric-val" id="m-tiles">—</div>
+          <div class="metric-label">Tiles</div>
+        </div>
+      </div>
+
+      <div class="quality-row" id="quality-row">
+        <div class="quality-label" id="quality-label">Qualitative comparison — No ground truth provided</div>
+        <div class="quality-metrics" id="quality-metrics" hidden>
+          <div class="q-metric" id="qm-precision">
+            <span class="q-val">—</span>
+            <span class="q-key">Precision</span>
+          </div>
+          <div class="q-metric" id="qm-recall">
+            <span class="q-val">—</span>
+            <span class="q-key">Recall</span>
+          </div>
+          <div class="q-metric" id="qm-f1">
+            <span class="q-val">—</span>
+            <span class="q-key">F1</span>
+          </div>
+          <div class="q-metric" id="qm-iou">
+            <span class="q-val">—</span>
+            <span class="q-key">IoU</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="comparison-grid" id="comparison-grid" hidden>
+        <div class="comp-cell" id="comp-original">
+          <img id="comp-img-original" alt="Original" />
+          <div class="comp-label">Original</div>
+        </div>
+        <div class="comp-cell" id="comp-qhed">
+          <img id="comp-img-qhed" alt="QHED" />
+          <div class="comp-label">QHED</div>
+        </div>
+        <div class="comp-cell" id="comp-sobel">
+          <img id="comp-img-sobel" alt="Sobel" />
+          <div class="comp-label">Sobel</div>
+        </div>
+        <div class="comp-cell" id="comp-canny">
+          <img id="comp-img-canny" alt="Canny" />
+          <div class="comp-label">Canny</div>
+        </div>
+      </div>
+
+      <button class="btn-secondary" id="download-btn" hidden>Download Edge Map (PNG)</button>
+    </div>
+  </section>
+
+  <!-- ───────────────────── ARCHITECTURE BAND ───────────────────── -->
+  <section class="arch-band" id="architecture">
+    <div class="arch-inner">
+      <h2 class="display-sm">Architecture</h2>
+      <p class="arch-sub">
+        Every tile is an independent QHED circuit on <code>log₂(T²) + 1</code> qubits.
+        Image size only changes <em>how many</em> circuits run, never <em>how big</em> they are.
+      </p>
+
+      <div class="flow-diagram" id="flow-diagram" aria-label="Pipeline flow diagram">
+        <div class="flow-node flow-upload" id="fn-upload">
+          <div class="fn-icon">↑</div>
+          <div class="fn-label">Image<br/><span class="fn-sub">PNG/JPEG up to 4K</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-pre" id="fn-pre">
+          <div class="fn-icon">⊞</div>
+          <div class="fn-label">Preprocess<br/><span class="fn-sub">grayscale + resize</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-tile" id="fn-tile">
+          <div class="fn-icon">⊡</div>
+          <div class="fn-label">Tiler<br/><span class="fn-sub">T×T + 1px halo</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-qpie" id="fn-qpie">
+          <div class="fn-icon">ψ</div>
+          <div class="fn-label">QPIE<br/><span class="fn-sub">amplitude encode</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-qhed" id="fn-qhed">
+          <div class="fn-icon">H</div>
+          <div class="fn-label">QHED<br/><span class="fn-sub">Hadamard ∂</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-stitch" id="fn-stitch">
+          <div class="fn-icon">⊞</div>
+          <div class="fn-label">Stitch<br/><span class="fn-sub">seam-free</span></div>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-out" id="fn-out">
+          <div class="fn-icon">◈</div>
+          <div class="fn-label">Edge Map<br/><span class="fn-sub">+ metrics</span></div>
+        </div>
+      </div>
+
+      <div class="res-table-wrap">
+        <table class="res-table" id="res-table">
+          <thead>
+            <tr>
+              <th>Resolution</th>
+              <th>64×64 (13 qubits)</th>
+              <th>128×128 (15 qubits)</th>
+              <th>256×256 (17 qubits)</th>
+              <th>512×512 (19 qubits)</th>
+            </tr>
+          </thead>
+          <tbody id="res-tbody">
+            <tr><td>640×360</td><td>60</td><td>18</td><td>6</td><td>2</td></tr>
+            <tr><td>1280×720</td><td>220</td><td>60</td><td>18</td><td>6</td></tr>
+            <tr><td>1920×1080</td><td>476</td><td>130</td><td>36</td><td>10</td></tr>
+            <tr><td>3840×2160</td><td>1 820</td><td>494</td><td>130</td><td>36</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────── FOOTER ───────────────────── -->
+  <footer class="footer" id="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <span class="nav-logo footer-logo">Q</span>
+        <span class="footer-name">Q-Edge</span>
+      </div>
+      <p class="footer-disclaimer">
+        <strong>Hybrid quantum-classical research prototype.</strong>
+        4K processing uses spatial tiling, not a single 4K quantum circuit.
+        All quantum results on this page come from classical simulation. No quantum advantage is claimed.
+      </p>
+      <p class="footer-copy">MIT License · QPIE + QHED architecture</p>
+    </div>
+  </footer>
+
+  <!-- ───────────────────── ABOUT MODAL ───────────────────── -->
+  <div class="modal-backdrop" id="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal" id="about-modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">About Q-Edge</h2>
+        <button class="close-btn" id="close-modal" aria-label="Close modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>Q-Edge is a hackathon-scale prototype demonstrating <strong>tiled Quantum Hadamard Edge Detection (QHED)</strong>.</p>
+        <h3>QPIE — Quantum Probability Image Encoding</h3>
+        <p>Each image tile is amplitude-encoded into a quantum state vector. Pixel intensities become the amplitudes of the superposition.</p>
+        <h3>QHED — Quantum Hadamard Edge Detection</h3>
+        <p>Hadamard gates applied to the encoded state produce forward-difference gradients Gx and Gy. The magnitude gives the edge response.</p>
+        <h3>Tiling</h3>
+        <p>Large images are split into T×T tiles with a 1 px halo. Each tile runs an independent circuit. Tiles are stitched back seam-free.</p>
+        <h3>Honest note</h3>
+        <p>At present this runs on a <em>classical simulator</em>. There is no quantum speedup over OpenCV. What is demonstrated is the correct quantum algorithm and its linear scaling with image size.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

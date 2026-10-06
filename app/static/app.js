@@ -1,0 +1,804 @@
+/**
+ * Q-Edge Frontend — app.js
+ *
+ * Handles all UI interactions:
+ *  - Image upload & drag-drop
+ *  - Control state management (segmented controls, sliders, selects)
+ *  - Simulated pipeline run with progress
+ *  - Tab switching
+ *  - Image viewport (zoom, fit, before/after compare)
+ *  - Tile inspector
+ *  - Quantum circuit canvas rendering
+ *  - Results display
+ *  - Modal
+ */
+
+/* ── Constants ── */
+const TILE_QUBITS = { 64: 13, 128: 15, 256: 17, 512: 19 };
+const BACKEND_LABELS = {
+  numpy: 'Ideal Simulation',
+  aer:   'Noisy Simulation (Aer)',
+  ibm:   'IBM Quantum (stub)',
+};
+
+/* ── State ── */
+const state = {
+  imageFile:     null,
+  imageURL:      null,   // blob URL for original
+  imageDims:     null,   // {w, h}
+  tileSize:      256,
+  halo:          1,
+  backend:       'numpy',
+  shots:         4096,
+  thresholdType: 'fixed',
+  threshold:     0.20,
+  mode:          'demo',
+  running:       false,
+  hasResults:    false,
+  activeTab:     'original',
+  zoom:          1.0,
+  compareMode:   false,
+  // Simulated result images (canvas-generated)
+  resultImages:  {},
+};
+
+/* ── DOM helpers ── */
+const $ = id => document.getElementById(id);
+const show = el => { if (el) el.hidden = false; };
+const hide = el => { if (el) el.hidden = true; };
+
+/* ═══════════════════════════════════════════════════════════════
+   CIRCUIT CANVAS RENDERING
+   ═══════════════════════════════════════════════════════════════ */
+function renderCircuit(canvas, qubits, compact = false) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const n = Math.min(qubits, compact ? 7 : 10);
+  const padding = { top: 16, bottom: 16, left: 40, right: 24 };
+  const laneH = (H - padding.top - padding.bottom) / n;
+  const gateW = compact ? 22 : 28;
+  const gateH = compact ? 18 : 22;
+
+  // Background
+  ctx.fillStyle = '#fffaf0';
+  ctx.fillRect(0, 0, W, H);
+
+  const gates = buildGateSequence(n, compact);
+  const depth = gates.length;
+  const colSpacing = Math.min((W - padding.left - padding.right) / (depth + 1), compact ? 32 : 40);
+
+  // Qubit lines
+  ctx.strokeStyle = '#e0dbd0';
+  ctx.lineWidth = 1;
+  for (let q = 0; q < n; q++) {
+    const y = padding.top + (q + 0.5) * laneH;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(W - padding.right, y);
+    ctx.stroke();
+  }
+
+  // Qubit labels
+  ctx.fillStyle = '#6a6a6a';
+  ctx.font = `${compact ? 9 : 10}px 'SF Mono', monospace`;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let q = 0; q < n; q++) {
+    const y = padding.top + (q + 0.5) * laneH;
+    ctx.fillText(`q${q}`, padding.left - 4, y);
+  }
+
+  // Draw gates
+  for (let col = 0; col < gates.length; col++) {
+    const x = padding.left + (col + 1) * colSpacing;
+    const colGates = gates[col];
+    for (const g of colGates) {
+      drawGate(ctx, g, x, padding.top + (g.qubit + 0.5) * laneH, gateW, gateH, laneH);
+    }
+  }
+
+  // Ellipsis if qubits > n
+  if (qubits > n) {
+    ctx.fillStyle = '#9a9a9a';
+    ctx.font = `${compact ? 10 : 11}px Inter, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`…+${qubits - n} qubits`, padding.left, H - 4);
+  }
+}
+
+function buildGateSequence(n, compact) {
+  // A representative but lightweight gate sequence for n qubits
+  const seq = [];
+  // Column 0: H gates on all qubits (QPIE init)
+  seq.push(Array.from({ length: n }, (_, q) => ({ type: 'H', qubit: q })));
+  // Column 1: CNOT chain
+  const cnots = [];
+  for (let q = 0; q < n - 1; q += 2) cnots.push({ type: 'CNOT', qubit: q, target: q + 1 });
+  if (cnots.length) seq.push(cnots);
+  // Column 2: RY gates
+  seq.push(Array.from({ length: Math.ceil(n / 2) }, (_, i) => ({ type: 'RY', qubit: i * 2 })));
+  // Column 3: H gates (QHED)
+  seq.push(Array.from({ length: n }, (_, q) => ({ type: 'H', qubit: q, accent: true })));
+  // Column 4: CZ gates
+  const czs = [];
+  for (let q = 1; q < n - 1; q += 3) czs.push({ type: 'CZ', qubit: q, target: q + 1 });
+  if (czs.length && !compact) seq.push(czs);
+  // Column 5: Measure
+  seq.push(Array.from({ length: n }, (_, q) => ({ type: 'M', qubit: q })));
+  return seq;
+}
+
+function drawGate(ctx, gate, cx, cy, gw, gh, laneH) {
+  const palette = {
+    H:    { bg: '#1a3a3a', fg: '#ffffff', border: '#1a3a3a' },
+    RY:   { bg: '#e8b94a', fg: '#0a0a0a', border: '#c99e30' },
+    CNOT: { bg: '#fffaf0', fg: '#0a0a0a', border: '#b8a4ed' },
+    CZ:   { bg: '#fffaf0', fg: '#0a0a0a', border: '#ffb084' },
+    M:    { bg: '#f5f0e0', fg: '#6a6a6a', border: '#e0dbd0' },
+  };
+  const p = palette[gate.accent ? 'H' : gate.type] || palette.H;
+
+  if ((gate.type === 'CNOT' || gate.type === 'CZ') && gate.target !== undefined) {
+    const ty = cy + (gate.target - gate.qubit) * laneH;
+    // Draw vertical line
+    ctx.strokeStyle = p.border;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, ty);
+    ctx.stroke();
+    // Control dot
+    ctx.fillStyle = p.border;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Target symbol
+    if (gate.type === 'CNOT') {
+      ctx.strokeStyle = p.border;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, ty, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 6, ty); ctx.lineTo(cx + 6, ty);
+      ctx.moveTo(cx, ty - 6); ctx.lineTo(cx, ty + 6);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = p.border;
+      ctx.beginPath();
+      ctx.arc(cx, ty, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+
+  // Box gate
+  const r = 4;
+  const x = cx - gw / 2, y = cy - gh / 2;
+  ctx.fillStyle = p.bg;
+  ctx.strokeStyle = p.border;
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, gw, gh, r);
+  ctx.fill();
+  ctx.stroke();
+
+  // Label
+  ctx.fillStyle = p.fg;
+  ctx.font = `${Math.max(gh * 0.5, 9)}px 'SF Mono', monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const label = gate.type === 'M' ? '↗' : gate.type;
+  ctx.fillText(label, cx, cy);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TECH SUMMARY UPDATE
+   ═══════════════════════════════════════════════════════════════ */
+function updateTechSummary() {
+  const ts = state.tileSize;
+  const q = TILE_QUBITS[ts] || 17;
+  const padded = ts * ts;
+
+  let tiles = '—';
+  if (state.imageDims) {
+    const { w, h } = state.imageDims;
+    const cols = Math.ceil(w / (ts - state.halo));
+    const rows = Math.ceil(h / (ts - state.halo));
+    tiles = (cols * rows).toLocaleString();
+    $('s-tiles').textContent = tiles;
+  } else {
+    $('s-tiles').textContent = '—';
+  }
+  $('s-tile-dim').textContent   = `${ts}×${ts}`;
+  $('s-padded').textContent     = padded.toLocaleString();
+  $('s-qubits').textContent     = q;
+  $('s-backend').textContent    = BACKEND_LABELS[state.backend] || state.backend;
+
+  // Right panel
+  $('d-vector').textContent     = padded.toLocaleString();
+  $('d-qubits').textContent     = q;
+  $('hero-qubits').textContent  = q;
+  $('d-depth').textContent      = q + 7;
+  $('hero-depth').textContent   = q + 7;
+  $('d-gates').textContent      = q * 4;
+  $('hero-gates').textContent   = q * 4;
+
+  // Badge
+  document.querySelector('.badge-quantum').textContent = `${q} qubits`;
+
+  // Re-render circuits
+  renderCircuit($('circuit-canvas'), q, false);
+  renderCircuit($('mini-circuit-canvas'), q, true);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SIMULATED PIPELINE (frontend-only demo)
+   ═══════════════════════════════════════════════════════════════ */
+function simulateEdgeDetection(imageURL, method = 'qhed') {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const w = canvas.width, h = canvas.height;
+
+      // Convert to grayscale float32
+      const gray = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+        gray[i] = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      }
+
+      let edges;
+      if (method === 'sobel' || method === 'qhed') {
+        edges = sobelFilter(gray, w, h);
+      } else if (method === 'canny') {
+        edges = cannyApprox(gray, w, h);
+      } else {
+        edges = sobelFilter(gray, w, h);
+      }
+
+      // Normalize & threshold
+      const th = state.threshold;
+      const out = ctx.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        const v = Math.min(edges[i], 1);
+        const bin = v > th ? 255 : 0;
+        out.data[i * 4]     = bin;
+        out.data[i * 4 + 1] = bin;
+        out.data[i * 4 + 2] = bin;
+        out.data[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(out, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = imageURL;
+  });
+}
+
+function sobelFilter(gray, w, h) {
+  const out = new Float32Array(w * h);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const tl = gray[(y-1)*w + (x-1)], tc = gray[(y-1)*w + x], tr = gray[(y-1)*w + (x+1)];
+      const ml = gray[y*w + (x-1)],                              mr = gray[y*w + (x+1)];
+      const bl = gray[(y+1)*w + (x-1)], bc = gray[(y+1)*w + x], br = gray[(y+1)*w + (x+1)];
+      const gx = -tl - 2*ml - bl + tr + 2*mr + br;
+      const gy = -tl - 2*tc - tr + bl + 2*bc + br;
+      out[y*w + x] = Math.sqrt(gx*gx + gy*gy) / 4;
+    }
+  }
+  return out;
+}
+
+function cannyApprox(gray, w, h) {
+  // Simple Canny approximation: sobel + non-max suppression (lightweight)
+  const sob = sobelFilter(gray, w, h);
+  const out = new Float32Array(w * h);
+  const lo = 0.05, hi = 0.15;
+  for (let i = 0; i < w * h; i++) {
+    out[i] = sob[i] > hi ? 1.0 : (sob[i] > lo ? 0.5 : 0.0);
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PIPELINE RUN
+   ═══════════════════════════════════════════════════════════════ */
+async function runPipeline() {
+  if (state.running) return;
+  state.running = true;
+  $('run-btn').disabled = true;
+  $('run-btn').textContent = 'Running…';
+
+  const src = state.imageURL;
+  const ts = state.tileSize;
+  const dims = state.imageDims || { w: 512, h: 512 };
+  const cols = Math.ceil(dims.w / (ts - state.halo));
+  const rows = Math.ceil(dims.h / (ts - state.halo));
+  const total = cols * rows;
+
+  // Show progress
+  hide($('stage-empty'));
+  hide($('stage-image'));
+  show($('stage-progress'));
+
+  const messages = [
+    'Encoding QPIE amplitude states…',
+    'Applying Hadamard gates (Gx)…',
+    'Applying Hadamard gates (Gy)…',
+    'Measuring gradient magnitudes…',
+    'Stitching tile cores…',
+    'Normalizing edge map…',
+  ];
+
+  // Simulate progress
+  let done = 0;
+  await new Promise(resolve => {
+    const step = Math.max(1, Math.floor(total / 60));
+    const msgInterval = Math.floor(total / messages.length);
+
+    const tick = setInterval(() => {
+      done = Math.min(done + step + Math.floor(Math.random() * step), total);
+      const pct = done / total;
+      $('progress-bar-fill').style.width = `${(pct * 100).toFixed(1)}%`;
+      $('progress-label').textContent = `Processing tiles ${done.toLocaleString()} / ${total.toLocaleString()}`;
+      const msgIdx = Math.min(Math.floor(pct * messages.length), messages.length - 1);
+      $('progress-sub').textContent = messages[msgIdx];
+      if (done >= total) {
+        clearInterval(tick);
+        resolve();
+      }
+    }, 60);
+  });
+
+  // Generate edge maps
+  const t0 = performance.now();
+  const [qhedURL, sobelURL, cannyURL] = await Promise.all([
+    src ? simulateEdgeDetection(src, 'qhed')  : null,
+    src ? simulateEdgeDetection(src, 'sobel') : null,
+    src ? simulateEdgeDetection(src, 'canny') : null,
+  ]);
+  const elapsed = (performance.now() - t0) / 1000;
+
+  state.resultImages = {
+    original: src,
+    qhed:     qhedURL,
+    sobel:    sobelURL,
+    canny:    cannyURL,
+  };
+  state.hasResults = true;
+
+  // Show image
+  hide($('stage-progress'));
+  showTab(state.activeTab);
+
+  // Results band
+  updateResults(elapsed, total, ts);
+  showResultsBand();
+
+  // Reset run button
+  state.running = false;
+  $('run-btn').disabled = false;
+  $('run-btn').textContent = 'Run Q-Edge';
+
+  // Show tile inspector
+  show($('tile-inspector'));
+}
+
+function showTab(tabName) {
+  state.activeTab = tabName;
+  const url = state.resultImages[tabName] || state.imageURL;
+
+  if (!url) {
+    show($('stage-empty'));
+    hide($('stage-image'));
+    return;
+  }
+
+  hide($('stage-empty'));
+  hide($('stage-progress'));
+  show($('stage-image'));
+  $('main-image').src = url;
+
+  // Comparison image (original vs selected)
+  if (state.compareMode && tabName !== 'original') {
+    show($('compare-overlay'));
+    $('compare-image').src = state.resultImages.original || '';
+  } else {
+    hide($('compare-overlay'));
+  }
+}
+
+function updateResults(elapsed, total, ts) {
+  const q = TILE_QUBITS[ts] || 17;
+  $('m-execution').textContent  = `${elapsed.toFixed(2)} s`;
+  $('m-preprocess').textContent = `${(elapsed * 0.07).toFixed(2)} s`;
+  $('m-stitch').textContent     = `${(elapsed * 0.04).toFixed(2)} s`;
+  $('m-qubits').textContent     = q;
+  $('m-depth').textContent      = q + 7;
+  $('m-tiles').textContent      = total.toLocaleString();
+
+  // Comparison grid
+  if (state.resultImages.original) {
+    $('comp-img-original').src = state.resultImages.original;
+    $('comp-img-qhed').src     = state.resultImages.qhed || '';
+    $('comp-img-sobel').src    = state.resultImages.sobel || '';
+    $('comp-img-canny').src    = state.resultImages.canny || '';
+    show($('comparison-grid'));
+  }
+
+  show($('download-btn'));
+}
+
+function showResultsBand() {
+  const section = $('results');
+  show(section);
+  setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TILE INSPECTOR SIMULATION
+   ═══════════════════════════════════════════════════════════════ */
+const STAGE_COLORS = {
+  original:   null,
+  gray:       'gray',
+  normalized: 'normalized',
+  qpie:       'qpie',
+  qhed:       'qhed',
+  gx:         'gx',
+  gy:         'gy',
+  magnitude:  'magnitude',
+  edges:      'edges',
+};
+
+function renderInspectorStage(stage) {
+  const canvas = $('inspector-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // If we have a real image, process a crop of it; otherwise draw synthetic
+  if (state.imageURL && stage !== 'qpie') {
+    renderRealTileStage(ctx, W, H, stage);
+  } else {
+    renderSyntheticStage(ctx, W, H, stage);
+  }
+}
+
+function renderRealTileStage(ctx, W, H, stage) {
+  const img = new Image();
+  img.onload = () => {
+    // Draw top-left tile crop
+    const ts = Math.min(state.tileSize, img.width, img.height);
+    ctx.drawImage(img, 0, 0, ts, ts, 0, 0, W, H);
+
+    const id = ctx.getImageData(0, 0, W, H);
+    const d = id.data;
+
+    if (stage === 'gray' || stage === 'normalized') {
+      for (let i = 0; i < W * H; i++) {
+        const v = Math.round(0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2]);
+        const nv = stage === 'normalized' ? Math.round(v * 0.9 + 5) : v;
+        d[i*4] = d[i*4+1] = d[i*4+2] = nv;
+      }
+      ctx.putImageData(id, 0, 0);
+    } else if (stage === 'qhed' || stage === 'edges' || stage === 'magnitude') {
+      const gray = new Float32Array(W * H);
+      for (let i = 0; i < W * H; i++) {
+        gray[i] = (0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2]) / 255;
+      }
+      const edges = sobelFilter(gray, W, H);
+      const th = state.threshold;
+      for (let i = 0; i < W * H; i++) {
+        const e = Math.min(edges[i], 1);
+        const v = stage === 'edges' ? (e > th ? 255 : 0) : Math.round(e * 255);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      }
+      ctx.putImageData(id, 0, 0);
+    } else if (stage === 'gx' || stage === 'gy') {
+      const gray = new Float32Array(W * H);
+      for (let i = 0; i < W * H; i++) {
+        gray[i] = (0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2]) / 255;
+      }
+      const grad = new Float32Array(W * H);
+      for (let y = 1; y < H - 1; y++) {
+        for (let x = 1; x < W - 1; x++) {
+          const tl = gray[(y-1)*W+(x-1)], tc = gray[(y-1)*W+x], tr = gray[(y-1)*W+(x+1)];
+          const ml = gray[y*W+(x-1)],                            mr = gray[y*W+(x+1)];
+          const bl = gray[(y+1)*W+(x-1)], bc = gray[(y+1)*W+x], br = gray[(y+1)*W+(x+1)];
+          if (stage === 'gx') {
+            grad[y*W+x] = (-tl - 2*ml - bl + tr + 2*mr + br) / 4 + 0.5;
+          } else {
+            grad[y*W+x] = (-tl - 2*tc - tr + bl + 2*bc + br) / 4 + 0.5;
+          }
+        }
+      }
+      for (let i = 0; i < W * H; i++) {
+        const v = Math.round(Math.max(0, Math.min(1, grad[i])) * 255);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      }
+      ctx.putImageData(id, 0, 0);
+    }
+    // For 'original': already drawn above
+  };
+  img.src = state.imageURL;
+}
+
+function renderSyntheticStage(ctx, W, H, stage) {
+  // Draw a synthetic test pattern for each stage
+  const id = ctx.createImageData(W, H);
+  const d = id.data;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      let v = 128;
+      if (stage === 'original') {
+        v = Math.round((Math.sin(x/8) * Math.cos(y/8) + 1) * 127);
+        d[i*4] = v; d[i*4+1] = Math.round(v * 0.7); d[i*4+2] = Math.round(v * 0.5);
+      } else if (stage === 'gray' || stage === 'normalized') {
+        v = Math.round((Math.sin(x/8) * Math.cos(y/8) + 1) * 127);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      } else if (stage === 'qpie') {
+        // Heatmap-style amplitude
+        const amp = Math.abs(Math.sin(x / W * Math.PI) * Math.cos(y / H * Math.PI));
+        d[i*4] = Math.round(26 * (1 - amp) + 26 * amp);
+        d[i*4+1] = Math.round(58 * (1 - amp) + 200 * amp);
+        d[i*4+2] = Math.round(58 * (1 - amp) + 100 * amp);
+      } else if (stage === 'qhed' || stage === 'edges') {
+        const edge = (x % 32 < 2 || y % 32 < 2) ? 255 : 0;
+        d[i*4] = d[i*4+1] = d[i*4+2] = edge;
+      } else if (stage === 'gx') {
+        v = Math.round((Math.sin(x / 8) + 1) * 127);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      } else if (stage === 'gy') {
+        v = Math.round((Math.sin(y / 8) + 1) * 127);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      } else if (stage === 'magnitude') {
+        const gx = Math.sin(x/8), gy = Math.sin(y/8);
+        v = Math.round(Math.min(Math.sqrt(gx*gx + gy*gy) / Math.SQRT2, 1) * 255);
+        d[i*4] = d[i*4+1] = d[i*4+2] = v;
+      }
+      d[i*4+3] = 255;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ZOOM & PAN
+   ═══════════════════════════════════════════════════════════════ */
+function applyZoom() {
+  const img = $('main-image');
+  if (!img) return;
+  img.style.transform = `scale(${state.zoom})`;
+  img.style.transformOrigin = 'center center';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DOWNLOAD
+   ═══════════════════════════════════════════════════════════════ */
+function downloadEdgeMap() {
+  const url = state.resultImages.qhed;
+  if (!url) return;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'q-edge-edges.png';
+  a.click();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   EVENT WIRING
+   ═══════════════════════════════════════════════════════════════ */
+function wireSegmented(groupId, callback) {
+  const group = $(groupId);
+  if (!group) return;
+  group.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('seg-active'));
+      btn.classList.add('seg-active');
+      callback(btn.dataset.value);
+    });
+  });
+}
+
+function init() {
+  /* ── Initial circuit render ── */
+  renderCircuit($('circuit-canvas'), 17, false);
+  renderCircuit($('mini-circuit-canvas'), 17, true);
+  updateTechSummary();
+
+  /* ── Upload ── */
+  const zone  = $('upload-zone');
+  const input = $('image-upload');
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') input.click(); });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) handleFile(input.files[0]);
+  });
+
+  function handleFile(file) {
+    if (state.imageURL) URL.revokeObjectURL(state.imageURL);
+    state.imageFile = file;
+    state.imageURL  = URL.createObjectURL(file);
+    state.hasResults = false;
+    state.resultImages = {};
+
+    // Get dims
+    const img = new Image();
+    img.onload = () => {
+      state.imageDims = { w: img.width, h: img.height };
+      $('img-name').textContent = file.name;
+      $('img-dims').textContent = `${img.width} × ${img.height} px`;
+      show($('image-info'));
+      updateTechSummary();
+      // Show original in preview
+      showTab('original');
+    };
+    img.src = state.imageURL;
+  }
+
+  /* ── Tile size ── */
+  wireSegmented('tile-size-group', val => {
+    state.tileSize = parseInt(val);
+    updateTechSummary();
+  });
+
+  /* ── Halo ── */
+  $('halo-input').addEventListener('input', e => {
+    state.halo = parseInt(e.target.value) || 1;
+    updateTechSummary();
+  });
+
+  /* ── Backend ── */
+  $('backend-select').addEventListener('change', e => {
+    state.backend = e.target.value;
+    const shotsGroup = $('shots-group');
+    if (state.backend === 'aer' || state.backend === 'ibm') {
+      show(shotsGroup);
+    } else {
+      hide(shotsGroup);
+    }
+    updateTechSummary();
+  });
+
+  /* ── Shots ── */
+  $('shots-input').addEventListener('input', e => {
+    state.shots = parseInt(e.target.value) || 4096;
+  });
+
+  /* ── Threshold type ── */
+  wireSegmented('threshold-type-group', val => {
+    state.thresholdType = val;
+    $('threshold-slider').disabled = (val === 'adaptive');
+  });
+
+  /* ── Threshold slider ── */
+  $('threshold-slider').addEventListener('input', e => {
+    state.threshold = parseInt(e.target.value) / 100;
+    $('threshold-value').textContent = state.threshold.toFixed(2);
+  });
+
+  /* ── Mode ── */
+  wireSegmented('mode-group', val => { state.mode = val; });
+
+  /* ── Run button ── */
+  $('run-btn').addEventListener('click', runPipeline);
+
+  /* ── Viz tabs ── */
+  $('viz-tabs').querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      $('viz-tabs').querySelectorAll('.tab').forEach(t => {
+        t.classList.remove('tab-active');
+        t.setAttribute('aria-selected', 'false');
+      });
+      tab.classList.add('tab-active');
+      tab.setAttribute('aria-selected', 'true');
+      showTab(tab.dataset.tab);
+    });
+  });
+
+  /* ── Zoom ── */
+  $('btn-zoom-in').addEventListener('click', () => {
+    state.zoom = Math.min(state.zoom * 1.25, 5);
+    applyZoom();
+  });
+  $('btn-zoom-out').addEventListener('click', () => {
+    state.zoom = Math.max(state.zoom / 1.25, 0.2);
+    applyZoom();
+  });
+  $('btn-fit').addEventListener('click', () => {
+    state.zoom = 1.0;
+    applyZoom();
+  });
+
+  /* ── Compare ── */
+  $('btn-compare').addEventListener('click', () => {
+    state.compareMode = !state.compareMode;
+    $('btn-compare').classList.toggle('active', state.compareMode);
+    showTab(state.activeTab);
+  });
+
+  /* ── Tile inspector stage buttons ── */
+  $('pipeline-stages').querySelectorAll('.stage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('pipeline-stages').querySelectorAll('.stage-btn').forEach(b => b.classList.remove('stage-active'));
+      btn.classList.add('stage-active');
+      renderInspectorStage(btn.dataset.stage);
+    });
+  });
+
+  /* ── Close inspector ── */
+  $('close-inspector').addEventListener('click', () => hide($('tile-inspector')));
+
+  /* ── Download ── */
+  $('download-btn').addEventListener('click', downloadEdgeMap);
+
+  /* ── Comparison grid click -> show tab ── */
+  ['original','qhed','sobel','canny'].forEach(name => {
+    const cell = $(`comp-${name}`);
+    if (cell) {
+      cell.addEventListener('click', () => {
+        $('viz-tabs').querySelectorAll('.tab').forEach(t => {
+          const match = t.dataset.tab === name;
+          t.classList.toggle('tab-active', match);
+          t.setAttribute('aria-selected', String(match));
+        });
+        showTab(name);
+        $('visualization').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      cell.style.cursor = 'pointer';
+    }
+  });
+
+  /* ── About modal ── */
+  $('info-btn').addEventListener('click', () => {
+    show($('modal-backdrop'));
+    $('close-modal').focus();
+  });
+  $('close-modal').addEventListener('click', () => hide($('modal-backdrop')));
+  $('modal-backdrop').addEventListener('click', e => {
+    if (e.target === $('modal-backdrop')) hide($('modal-backdrop'));
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('modal-backdrop').hidden) hide($('modal-backdrop'));
+  });
+
+  /* ── Render inspector default ── */
+  renderInspectorStage('original');
+}
+
+document.addEventListener('DOMContentLoaded', init);
