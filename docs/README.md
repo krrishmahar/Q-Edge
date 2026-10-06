@@ -16,6 +16,7 @@ scale up to 4K. A Streamlit app compares the quantum result with classical detec
 | [architecture.md](architecture.md) | Components, data flow, the QHED math, tiling scheme, concurrency, design decisions |
 | [api.md](api.md) | Python API reference: every public module, class and function with its file path |
 | [development.md](development.md) | Tooling, tests, quality gates, project history and how to regenerate screenshots |
+| [BENCHMARK.md](BENCHMARK.md) | Reproducible CPU/CUDA benchmarks, correctness validation, and limitations |
 | [future/roadmap.md](future/roadmap.md) | Future direction: hardware, noise mitigation, video, distributed execution |
 | [future/optimizations.md](future/optimizations.md) | Concrete performance and quality improvements, with expected impact |
 | [screenshots/](screenshots/) | Captures of the running UI |
@@ -40,6 +41,6 @@ Then open http://localhost:8501.
 | Backends: NumPy, Aer, GPU (verified CuPy CUDA), IBM hardware stub | Done; GPU validated on RTX 3050 |
 | Classical baselines and metrics | Done |
 | Streamlit app | Done |
-| Tests | 165 passing, about 98% coverage, ruff and mypy clean |
+| Tests | 169 passing in the current validation run |
 
 See also the project [README](../README.md) and [DECISIONS.md](../DECISIONS.md).

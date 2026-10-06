@@ -9,11 +9,6 @@ full-resolution edge map. Circuit size depends only on the tile, never on the im
 needs more circuits, not bigger ones. A Streamlit app shows the quantum result beside Sobel,
 Prewitt, Canny and Laplacian, with metrics, charts and an architecture view.
 
-> **Honest scope.** All quantum results come from classical simulation. Simulation is correct
-> (it matches real Qiskit circuits to about 1e-11). The NumPy simulator is slower than OpenCV,
-> while the optional CUDA backend is a classical GPU acceleration of that simulation. This
-> prototype demonstrates the architecture and correctness; it does not demonstrate quantum
-> advantage.
 
 ## Quickstart
 
@@ -120,19 +115,22 @@ scripts/demo.py                 end-to-end demo
 
 ## Benchmark results
 
-Development machine: Windows, NumPy backend with thread pool. Run `uv run python scripts/demo.py --scaling` to reproduce.
+Development machine: Windows, Python 3.12.15, NumPy 2.5.3, CuPy 14.2.0, CUDA 13.4,
+NVIDIA GeForce RTX 3050 6GB Laptop GPU, one worker. Each CPU/GPU row uses one warm-up and
+three timed runs; the reported time is the median. Full methodology is in
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
-**Runtime vs resolution** (synthetic scenes, seconds):
+**Runtime versus resolution** (synthetic scenes, seconds):
 
-| Resolution | Megapixels | QHED (simulated) | Sobel | Canny |
-|---|---|---|---|---|
-| 480x270 | 0.13 | 0.032 | 0.004 | 0.002 |
-| 960x540 | 0.52 | 0.080 | 0.011 | 0.011 |
-| 1920x1080 | 2.07 | 0.277 | 0.059 | 0.028 |
-| 3840x2160 | 8.29 | 1.626 | 0.152 | 0.176 |
+| Resolution | Megapixels | Tiles | NumPy QHED (s) | CUDA QHED (s) | Speedup |
+|---|---|---|---|---|---|
+| 512x512 | 0.2621 | 5,476 | 0.040782 | 0.010332 | 3.95x |
+| 1280x720 | 0.9216 | 18,849 | 0.232143 | 0.050653 | 4.58x |
+| 1920x1080 | 2.0736 | 42,625 | 0.310411 | 0.065478 | 4.74x |
+| 3840x2160 | 8.2944 | 169,641 | 0.621703 | 0.236522 | 2.63x |
 
-A full 4K frame processes in about 1.2-1.6 s: 169,641 tiles of 8x8, or 36,864 tiles of 16x16.
-All methods scale roughly linearly with pixel count.
+The 4K run processes 169,641 halo tiles. These results show CUDA acceleration of the classical
+simulation, not quantum advantage, and are specific to this hardware and one-worker setup.
 
 **Quality on synthetic 1080p with ground-truth edges:**
 
@@ -149,9 +147,11 @@ the NumPy path and real Aer circuits is 5.76e-12 (Aer took ~12.0 s).
 
 **CUDA validation:** on an NVIDIA GeForce RTX 3050 6GB Laptop GPU (compute capability 8.6,
 CuPy 14.2.0, CUDA toolkit 13.4), the real CuPy backend produced a maximum absolute error of
-4.44e-16 against NumPy on 128 16x16 tiles. With one worker, it reached 26.0 MP/s at 512x512,
-38.4 MP/s at 1920x1080, and 23.9 MP/s at 3840x2160. NumPy reached 8.0, 8.5, and 6.2 MP/s,
-respectively, for measured GPU speedups of 3.27x, 4.54x, and 3.86x.
+4.44e-16 against NumPy on 128 16x16 tiles. In a fresh three-run median benchmark with one
+worker, CUDA reached 25.373 MP/s at 512x512, 31.669 MP/s at 1920x1080, and 35.068 MP/s at
+3840x2160. NumPy reached 6.428, 6.680, and 13.341 MP/s, respectively, for measured speedups
+of 3.95x, 4.74x, and 2.63x. See the complete methodology and tables in
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 
 ## Limitations
 
@@ -169,6 +169,9 @@ respectively, for measured GPU speedups of 3.27x, 4.54x, and 3.86x.
   images of at most 64 px and 4x4 tiles.
 - **CUDA acceleration requires the optional `gpu` extra.** Selected GPU execution reports an
   explicit capability error rather than falling back to NumPy.
+- **The CUDA benchmark is not a maximum-CPU comparison.** The reported CPU baseline uses one
+  worker, and GPU performance varies with transfers, batching, driver, CUDA version, and
+  competing GPU workloads.
 - **The hardware backend is a stub.** It raises `NotConfiguredError`, and the app makes no
   network calls.
 
