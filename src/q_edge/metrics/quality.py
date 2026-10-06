@@ -86,3 +86,23 @@ def edge_scores(
     denom = precision + recall
     f1 = 2.0 * precision * recall / denom if denom > 0 else 0.0
     return EdgeScores(precision, recall, f1)
+
+
+def iou(prediction: NDArray[np.bool_], reference: NDArray[np.bool_]) -> float:
+    """Intersection over Union (Jaccard index) between two binary edge maps.
+
+    Args:
+        prediction: Predicted binary edge map.
+        reference: Ground-truth/reference binary edge map.
+
+    Returns:
+        IoU score in [0.0, 1.0]. Returns 1.0 if both masks are empty.
+    """
+    pred = np.asarray(prediction, dtype=bool)
+    ref = np.asarray(reference, dtype=bool)
+    _check_shapes(pred, ref)
+    intersection = int(np.count_nonzero(pred & ref))
+    union = int(np.count_nonzero(pred | ref))
+    if union == 0:
+        return 1.0
+    return float(intersection / union)

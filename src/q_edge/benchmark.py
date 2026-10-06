@@ -19,7 +19,7 @@ from q_edge.config import Preset, QEdgeConfig
 from q_edge.data.synthetic import synthetic_shapes
 from q_edge.imaging import FloatArray
 from q_edge.metrics.perf import measure, throughput
-from q_edge.metrics.quality import edge_density, edge_scores, psnr, ssim
+from q_edge.metrics.quality import edge_density, edge_scores, iou, psnr, ssim
 from q_edge.pipeline import ImageSource, load_image, preprocess, run_pipeline
 
 QUANTUM_METHOD = "qhed"
@@ -35,6 +35,7 @@ BENCHMARK_COLUMNS: tuple[str, ...] = (
     "precision",
     "recall",
     "f1",
+    "iou",
     "edge_density",
     "peak_mem_mb",
 )
@@ -112,6 +113,7 @@ def benchmark(
                 "precision": scores.precision,
                 "recall": scores.recall,
                 "f1": scores.f1,
+                "iou": iou(binary, ref),
                 "edge_density": edge_density(binary),
                 "peak_mem_mb": perf.peak_memory_mb if track_memory else np.nan,
             }
