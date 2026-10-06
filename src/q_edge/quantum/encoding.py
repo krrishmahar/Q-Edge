@@ -14,11 +14,83 @@ from qiskit.circuit.library import StatePreparation
 
 FloatArray = NDArray[np.float64]
 
-#: Tile sizes supported by the pipeline (square, power-of-two side length).
-SUPPORTED_TILE_SIZES: tuple[int, ...] = (4, 8, 16)
+#: Tile sizes supported by the pipeline (square side lengths).
+SUPPORTED_TILE_SIZES: tuple[int, ...] = (4, 8, 16, 64, 128, 256, 512)
 
 #: Norms below this value are treated as an all-zero tile.
 ZERO_NORM_EPS = 1e-12
+
+
+def next_power_of_two(n: int) -> int:
+    """Return the smallest power of two greater than or equal to n.
+
+    Args:
+        n: Positive integer pixel count.
+    """
+    if n < 1:
+        return 1
+    return 1 << (n - 1).bit_length()
+
+
+def pad_to_power_of_two(arr: NDArray[np.floating]) -> FloatArray:
+    """Pad a 1-D vector or flattened array with zeros up to the next power of two.
+
+    Args:
+        arr: 1-D or flattened array of intensities/amplitudes.
+
+    Returns:
+        Zero-padded 1-D array whose length is a power of two.
+    """
+    data = np.asarray(arr, dtype=np.float64).ravel()
+    target_len = next_power_of_two(data.size)
+    if data.size == target_len:
+        return data
+    return np.pad(data, (0, target_len - data.size), mode="constant", constant_values=0.0)
+
+
+def coord_to_index(row: int, col: int, shape: tuple[int, int]) -> int:
+    """Reversible mapping from (row, col) coordinates to a 1-D row-major basis index.
+
+    Args:
+        row: Row coordinate.
+        col: Column coordinate.
+        shape: Dimensions (height, width) of the 2-D tile/image.
+
+    Raises:
+        ValueError: If (row, col) is out of bounds for shape.
+    """
+    h, w = shape
+    if not (0 <= row < h and 0 <= col < w):
+        raise ValueError(f"coordinate ({row}, {col}) out of bounds for shape {shape}")
+    return row * w + col
+
+
+def index_to_coord(index: int, shape: tuple[int, int]) -> tuple[int, int]:
+    """Reversible mapping from a 1-D basis index back to (row, col) coordinates.
+
+    Args:
+        index: Row-major pixel basis index.
+        shape: Dimensions (height, width) of the 2-D tile/image.
+
+    Raises:
+        ValueError: If index is out of bounds for shape.
+    """
+    h, w = shape
+    if not (0 <= index < h * w):
+        raise ValueError(f"index {index} out of bounds for shape {shape} (size {h * w})")
+    return divmod(index, w)
+
+
+def validate_normalization(amplitudes: NDArray[np.floating], atol: float = 1e-7) -> bool:
+    """Validate that an amplitude vector has unit L2 norm sum(|c_i|^2) = 1.
+
+    Args:
+        amplitudes: 1-D amplitude vector.
+        atol: Absolute tolerance for validation.
+    """
+    vec = np.asarray(amplitudes, dtype=np.float64).ravel()
+    norm_sq = float(np.sum(np.square(vec)))
+    return bool(np.isclose(norm_sq, 1.0, atol=atol))
 
 
 def num_data_qubits(num_pixels: int) -> int:
