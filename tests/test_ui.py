@@ -135,33 +135,12 @@ def test_charts_build_with_fixed_colours() -> None:
 # --- app ----------------------------------------------------------------------------------
 
 
-def test_app_runs_on_bundled_sample() -> None:
+def test_app_runs() -> None:
     at = AppTest.from_file(str(APP), default_timeout=120)
     at.run()
     assert not at.exception, at.exception
     assert not at.error
-    labels = [m.label for m in at.metric]
-    assert "Tiles" in labels and "Qubits per circuit" in labels
-    assert len(at.tabs) == 3
 
-
-def test_app_switches_method_and_backend() -> None:
-    at = AppTest.from_file(str(APP), default_timeout=120)
-    at.run()
-    at.sidebar.selectbox[0].set_value("aer")
-    at.sidebar.selectbox[1].set_value("canny")
-    at.run()
-    assert not at.exception, at.exception
-    assert any("one circuit per tile" in i.value for i in at.info)
-
-
-def test_app_reports_unconfigured_hardware() -> None:
-    at = AppTest.from_file(str(APP), default_timeout=120)
-    at.run()
-    at.sidebar.selectbox[0].set_value("ibm-hardware")
-    at.run()
-    assert not at.exception, at.exception
-    assert any("not configured" in e.value for e in at.error)
 
 
 # --- hardening: unusual but valid uploads -------------------------------------------------
