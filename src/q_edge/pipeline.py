@@ -48,6 +48,10 @@ class PipelineResult:
     num_tiles: int
     workers: int = 1
     batch_size: int = 0
+    original_tile_size: int = 0
+    halo_size: int = 1
+    padded_vector_length: int = 0
+    qubits_per_tile: int = 0
     timings: dict[str, float] = field(default_factory=dict)
     config: QEdgeConfig = field(default_factory=QEdgeConfig)
 
@@ -177,6 +181,10 @@ def run_pipeline(
         num_tiles=grid.num_tiles,
         workers=workers,
         batch_size=batch_size,
+        original_tile_size=grid.tile_size,
+        halo_size=grid.halo_size,
+        padded_vector_length=grid.padded_vector_length,
+        qubits_per_tile=grid.num_qubits,
         timings=timings,
         config=cfg,
     )

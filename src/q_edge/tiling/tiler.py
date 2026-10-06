@@ -60,6 +60,25 @@ class TileGrid:
         """Side of the per-tile core response, ``T - 1``."""
         return self.tile_size - 1
 
+    @property
+    def halo_size(self) -> int:
+        """Halo width in pixels (1)."""
+        return 1
+
+    @property
+    def padded_vector_length(self) -> int:
+        """Length of power-of-two padded amplitude vector."""
+        from q_edge.quantum.encoding import next_power_of_two
+
+        return next_power_of_two(self.tile_size * self.tile_size)
+
+    @property
+    def num_qubits(self) -> int:
+        """Total qubits required per tile circuit (data qubits + 1 ancilla)."""
+        from q_edge.quantum.encoding import num_data_qubits
+
+        return num_data_qubits(self.padded_vector_length) + 1
+
     def batch(self, start: int, stop: int) -> FloatArray:
         """Return a contiguous ``(stop - start, T, T)`` copy of tiles in row-major order."""
         stop = min(stop, self.num_tiles)
