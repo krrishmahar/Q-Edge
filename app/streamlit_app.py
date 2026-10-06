@@ -138,6 +138,13 @@ def get_html_content() -> str:
     port = ensure_backend_server()
     backend_setup = f"window.__BACKEND_API__ = 'http://127.0.0.1:{port}/api/process';\n"
 
+    LOGO_PATH = STATIC_DIR / "logo.png"
+    if LOGO_PATH.exists():
+        logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode("utf-8")
+        logo_data_url = f"data:image/png;base64,{logo_b64}"
+        html = html.replace('src="./logo.png"', f'src="{logo_data_url}"')
+        html = html.replace('src="logo.png"', f'src="{logo_data_url}"')
+
     # Prepare bundled sample image if available
     sample_setup = ""
     if SAMPLE_PATH.exists():
